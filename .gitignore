@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# PyInstaller build output
+build/
+dist/
+*.spec
+
+# Never commit real exports or rename lists (they carry site data;
+# .svdb backups also contain hashed passwords in their Users table)
+*.svdb
+*.svdo
+*.mvdb
+*.mdb
+*.ldb
+!*/examples/*.csv
+
+# Editor/OS noise
+.claude/
+.vscode/
+.DS_Store
+Thumbs.db
