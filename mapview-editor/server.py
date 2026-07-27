@@ -5,13 +5,23 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import webbrowser
 from pathlib import Path
+from threading import Timer
 
 import py7zr
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+# When frozen by PyInstaller, bundled data lives under sys._MEIPASS, not the cwd.
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+
+app = Flask(
+    __name__,
+    static_folder=str(BASE_DIR / "static"),
+    template_folder=str(BASE_DIR / "templates"),
+)
 
 WORK_DIR = None
 MAP_DATA = {}
@@ -42,7 +52,7 @@ def _git(*args):
 
 @app.route("/")
 def index():
-    return send_from_directory("templates", "index.html")
+    return send_from_directory(str(BASE_DIR / "templates"), "index.html")
 
 
 @app.route("/api/version")
@@ -323,4 +333,7 @@ def _save_map_json(file_key):
 
 if __name__ == "__main__":
     print("MapView Editor running at http://localhost:5111")
-    app.run(host="127.0.0.1", port=5111, debug=True)
+    # debug/reloader off: the reloader re-executes the process, which breaks
+    # PyInstaller onefile builds (and debug tracebacks aren't for end users).
+    Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:5111")).start()
+    app.run(host="127.0.0.1", port=5111, debug=False)

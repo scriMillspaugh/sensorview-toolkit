@@ -64,7 +64,7 @@ See `examples/` for the CSV formats.
 ## Build a standalone .exe (for PCs without Python)
 ```
 py -m pip install pyinstaller
-py -m PyInstaller --onefile --name SensorViewRelabeler --add-data "core.py;." app.py
+py -m PyInstaller --onefile --name SensorViewRelabeler app.py
 ```
 Output: `dist/SensorViewRelabeler.exe`. It bundles Python and the Python
 dependencies, but **not** the Access Database Engine (a system driver) — that is a

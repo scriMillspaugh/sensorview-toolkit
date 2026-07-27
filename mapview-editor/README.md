@@ -67,6 +67,17 @@ See [METHOD.md](METHOD.md) for the full format and edit-pipeline writeup. In sho
 - `mapNNNN.json` — per-map JSON with device positions (hex ID + x/y) and zone polygons (WKT POLYGON coordinates)
 - `mapNNNN.png` — floorplan background images
 
+## Build a standalone .exe (for PCs without Python)
+
+```
+py -m pip install pyinstaller
+py -m PyInstaller --onefile --name MapViewEditor --add-data "static;static" --add-data "templates;templates" server.py
+```
+
+Output: `dist/MapViewEditor.exe`. Double-clicking it starts the server and opens
+the browser. The UI assets are bundled; no extra installs needed (unlike the
+Relabeler, this tool does not use the Access Database Engine).
+
 ## License
 
 MIT — see the repository root [LICENSE](../LICENSE).
