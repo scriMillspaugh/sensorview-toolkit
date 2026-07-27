@@ -1,7 +1,7 @@
 """
 SensorView Backup Relabeler — a local, browser-based tool.
 
-Load a SensorView .svdb backup, give devices/zones new labels (edit in the table
+Load a SensorView .svdb backup (or a bare sensor.mdb), give devices/zones new labels (edit in the table
 or upload a filled CSV), validate against Acuity BMS rules, and download a rebuilt
 _relabeled.svdb to import in SensorView.
 
@@ -47,14 +47,14 @@ def api_load():
     f = request.files.get("svdb")
     if not f or not f.filename:
         return jsonify({"error": "No file provided."}), 400
-    if not f.filename.lower().endswith((".svdb", ".svdo")):
-        return jsonify({"error": "Please choose a SensorView .svdb backup file."}), 400
+    if not f.filename.lower().endswith((".svdb", ".svdo", ".mdb")):
+        return jsonify({"error": "Please choose a SensorView .svdb backup or a sensor.mdb database file."}), 400
     token = uuid.uuid4().hex
     tmp = tempfile.mkdtemp(prefix="svload_")
     svdb_path = os.path.join(tmp, os.path.basename(f.filename))
     f.save(svdb_path)
     try:
-        mdb, _members = core.extract_svdb(svdb_path, tmp)
+        mdb, _members = core.prepare_input(svdb_path, tmp)
         tables = core.read_tables(mdb)
         driver = core.find_access_driver()
     except Exception as e:  # noqa: BLE001 — surface any load error to the UI
@@ -87,9 +87,10 @@ def api_apply():
     zone_map = {k: v for k, v in data.get("zones", {}).items() if (v or "").strip()}
     if not dev_map and not zone_map:
         return jsonify({"error": "No new labels entered — nothing to apply."}), 400
-    stem = os.path.splitext(os.path.basename(sess["name"]))[0]
+    stem, ext = os.path.splitext(os.path.basename(sess["name"]))
+    ext = ext or ".svdb"  # output mirrors the input type (.svdb/.svdo archive or bare .mdb)
     out_dir = tempfile.mkdtemp(prefix="svout_")
-    out_path = os.path.join(out_dir, f"{stem}_relabeled.svdb")
+    out_path = os.path.join(out_dir, f"{stem}_relabeled{ext}")
     try:
         summary = core.relabel(sess["svdb_path"], dev_map, zone_map, out_path)
     except ValueError as e:  # validation failure
@@ -100,7 +101,7 @@ def api_apply():
     OUTPUTS[dl] = out_path
     return jsonify({
         "download": dl,
-        "filename": f"{stem}_relabeled.svdb",
+        "filename": f"{stem}_relabeled{ext}",
         "devices_changed": summary["devices_changed"],
         "zones_changed": summary["zones_changed"],
     })
@@ -152,11 +153,11 @@ PAGE = r"""<!doctype html>
 <header><h1>SensorView Backup Relabeler</h1>
 <p>Local tool — the backup stays on this machine. The original file is never modified.</p></header>
 <main>
-  <div class="note"><b>How it works:</b> 1) Load a <code>.svdb</code> backup. 2) Enter new labels in the table, or download the CSV template, fill it, and upload it. 3) Validate. 4) Apply &amp; download the rebuilt <code>_relabeled.svdb</code>, then import it in SensorView (Import → Synchronize if labels don't push → do <b>not</b> Clear).</div>
+  <div class="note"><b>How it works:</b> 1) Load a <code>.svdb</code> backup — or a bare <code>sensor.mdb</code> database. 2) Enter new labels in the table, or download the CSV template, fill it, and upload it. 3) Validate. 4) Apply &amp; download the rebuilt <code>_relabeled</code> file (same type as the input), then import it in SensorView (Import → Synchronize if labels don't push → do <b>not</b> Clear).</div>
 
   <div class="card" id="loadCard">
     <div class="row">
-      <input type="file" id="file" accept=".svdb,.svdo">
+      <input type="file" id="file" accept=".svdb,.svdo,.mdb">
       <button id="loadBtn">Load backup</button>
       <span id="loadMsg" class="muted"></span>
     </div>
@@ -194,7 +195,7 @@ const $=id=>document.getElementById(id);
 function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 $("loadBtn").onclick=async()=>{
-  const f=$("file").files[0]; if(!f){$("loadMsg").textContent="Choose a .svdb file first.";return;}
+  const f=$("file").files[0]; if(!f){$("loadMsg").textContent="Choose a .svdb or .mdb file first.";return;}
   $("loadBtn").disabled=true;$("loadMsg").textContent="Loading… (large backups take a few seconds)";
   const fd=new FormData(); fd.append("svdb",f);
   const r=await fetch("/api/load",{method:"POST",body:fd}); const d=await r.json();

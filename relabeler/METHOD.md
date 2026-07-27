@@ -38,7 +38,8 @@ original.svdb ──7z extract──► sensor.mdb ──ODBC UPDATE──► se
 ```
 
 1. **Extract** with any 7-zip library (we use Python's `py7zr`). Record the
-   archive's member list.
+   archive's member list. (Given a bare `sensor.mdb` instead of an archive, skip
+   extract/repack and work on a copy of the database — the tools accept both.)
 2. **Edit** `sensor.mdb` through the Microsoft Access ODBC driver
    (`Microsoft Access Driver (*.mdb, *.accdb)` — install the 64-bit
    [Access Database Engine](https://www.microsoft.com/en-us/download/details.aspx?id=54920)

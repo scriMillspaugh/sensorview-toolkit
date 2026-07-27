@@ -6,7 +6,7 @@ new _relabeled.svdb. Same engine as the web tool (core.py); the original file is
 never modified.
 
 Usage:
-  py cli.py backup.svdb --devices devices.csv                 # dry-run (default)
+  py cli.py backup.svdb --devices devices.csv                 # dry-run (default); also accepts a bare sensor.mdb
   py cli.py backup.svdb --devices devices.csv --zones zones.csv --apply
 
 CSV formats:
@@ -39,8 +39,8 @@ def load_map(path, id_col, label_col):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Relabel a SensorView .svdb from crosswalk CSVs.")
-    ap.add_argument("svdb", help="Path to the .svdb backup")
+    ap = argparse.ArgumentParser(description="Relabel a SensorView .svdb backup (or bare sensor.mdb) from crosswalk CSVs.")
+    ap.add_argument("svdb", help="Path to the .svdb backup (or a bare sensor.mdb database)")
     ap.add_argument("--devices", help="Device rename CSV (DeviceID,CurrentLabel,ProposedLabel)")
     ap.add_argument("--zones", help="Zone rename CSV (ZoneID,CurrentName,ProposedName)")
     ap.add_argument("--apply", action="store_true", help="Write changes (default is a dry-run)")
@@ -63,7 +63,7 @@ def main():
 
     # Report coverage against the actual backup contents.
     tmp = tempfile.mkdtemp(prefix="svcli_")
-    mdb, _ = core.extract_svdb(args.svdb, tmp)
+    mdb, _ = core.prepare_input(args.svdb, tmp)
     tables = core.read_tables(mdb)
     dev_ids = {d["id"] for d in tables["devices"]}
     zone_ids = {z["id"] for z in tables["zones"]}
@@ -77,8 +77,9 @@ def main():
         print("\nDry-run only. Re-run with --apply to write a _relabeled.svdb.")
         return
 
-    stem = os.path.splitext(os.path.basename(args.svdb))[0]
-    out_path = os.path.join(os.path.dirname(os.path.abspath(args.svdb)), f"{stem}_relabeled.svdb")
+    stem, ext = os.path.splitext(os.path.basename(args.svdb))
+    ext = ext or ".svdb"  # output mirrors the input type
+    out_path = os.path.join(os.path.dirname(os.path.abspath(args.svdb)), f"{stem}_relabeled{ext}")
     summary = core.relabel(args.svdb, dev_map, zone_map, out_path)
     print(f"\nWrote {out_path}")
     print(f"Updated {summary['devices_changed']} devices + {summary['zones_changed']} zones.")

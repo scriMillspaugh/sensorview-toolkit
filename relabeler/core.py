@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -55,6 +56,21 @@ def extract_svdb(svdb_path: str, dest_dir: str) -> tuple[str, list[str]]:
     if not os.path.exists(mdb):
         raise RuntimeError("sensor.mdb not found inside the .svdb — is this a SensorView backup?")
     return mdb, members
+
+
+def prepare_input(in_path: str, dest_dir: str) -> tuple[str, list[str] | None]:
+    """Stage an input file for editing. Accepts either a .svdb/.svdo archive or a
+    bare Access database (.mdb). Returns (editable mdb path, archive member list).
+    Members is None for a bare .mdb — meaning output should also be a bare .mdb.
+
+    A bare .mdb is COPIED into dest_dir first so the original file is never
+    touched (the ODBC edits happen on the copy)."""
+    if in_path.lower().endswith(".mdb"):
+        staged = os.path.join(dest_dir, os.path.basename(in_path))
+        if os.path.abspath(staged) != os.path.abspath(in_path):
+            shutil.copy2(in_path, staged)  # already inside dest_dir (e.g. an upload) needs no copy
+        return staged, None
+    return extract_svdb(in_path, dest_dir)
 
 
 def read_tables(mdb_path: str) -> dict:
@@ -140,13 +156,18 @@ def repackage_svdb(src_dir: str, members: list[str], output_svdb: str) -> None:
                 z.write(str(p), name)
 
 
-def relabel(svdb_in: str, dev_map: dict, zone_map: dict, out_path: str) -> dict:
-    """Full pipeline against a fresh extraction. Returns a summary dict."""
+def relabel(in_path: str, dev_map: dict, zone_map: dict, out_path: str) -> dict:
+    """Full pipeline against freshly staged input (archive or bare .mdb).
+    Output mirrors the input: archive in -> rebuilt archive out; bare .mdb in ->
+    edited .mdb copy out. Returns a summary dict."""
     problems = validate(dev_map, zone_map)
     if problems:
         raise ValueError("Validation failed:\n" + "\n".join(problems))
     tmp = tempfile.mkdtemp(prefix="svrelabel_")
-    mdb, members = extract_svdb(svdb_in, tmp)
+    mdb, members = prepare_input(in_path, tmp)
     dchg, zchg = apply_labels(mdb, dev_map, zone_map)
-    repackage_svdb(tmp, members, out_path)
+    if members is None:
+        shutil.copy2(mdb, out_path)  # bare database: the edited copy IS the output
+    else:
+        repackage_svdb(tmp, members, out_path)
     return {"devices_changed": dchg, "zones_changed": zchg, "output": out_path}

@@ -14,11 +14,13 @@ surgery, and you get a new backup to import.
 > Always keep your original backup and review results before importing.
 
 ## How it works
-1. **Load** a `.svdb` backup — it reads every device and zone with its current label.
+1. **Load** a `.svdb` backup — or a bare `sensor.mdb` database file — and it
+   reads every device and zone with its current label.
 2. **Provide new labels** — type them into the table (web tool), or fill in a
    CSV rename list (either tool).
 3. **Validate** — checks the labeling rules (see below).
-4. **Apply & download** a rebuilt `<name>_relabeled.svdb`.
+4. **Apply & download** a rebuilt `<name>_relabeled` file (same type as the
+   input: `.svdb` in → `.svdb` out, `.mdb` in → `.mdb` out).
 5. In SensorView: **Import** the `_relabeled.svdb` → **Synchronize** if the labels
    don't push to devices → do **NOT** use Clear (that wipes labels and refills them
    from the devices).

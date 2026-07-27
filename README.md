@@ -13,7 +13,7 @@ your exports never leave the PC.
 
 | Tool | Works on | What it does |
 |---|---|---|
-| [**Relabeler**](relabeler/) | `.svdb` (database backup) | Batch-rename device and zone labels from a rename list (in-browser editor or CSV), validate against BMS naming rules, rebuild the backup for re-import. Includes a CLI. |
+| [**Relabeler**](relabeler/) | `.svdb` (database backup) or bare `sensor.mdb` | Batch-rename device and zone labels from a rename list (in-browser editor or CSV), validate against BMS naming rules, rebuild the backup for re-import. Includes a CLI. |
 | [**MapView Editor**](mapview-editor/) | `.mvdb` (MapView export) | Edit floorplans in the browser: move/add/remove device markers, draw and reshape zone polygons, rename/add/delete maps, swap floorplan images, auto-optimize PNGs on export. |
 
 Both tools follow the same pattern:
