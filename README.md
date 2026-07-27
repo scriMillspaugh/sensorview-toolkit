@@ -23,7 +23,19 @@ export from SensorView ──► edit locally ──► rebuilt file ──► i
         (original file is never modified)
 ```
 
-## Quick start
+## Download (no Python needed)
+
+Standalone Windows builds of both tools are on the
+[**Releases page**](https://github.com/scriMillspaugh/sensorview-toolkit/releases/latest) —
+download the `.exe`, double-click, and the tool opens in your browser.
+
+- `SensorViewRelabeler.exe` also needs the free
+  [Microsoft Access Database Engine](https://www.microsoft.com/en-us/download/details.aspx?id=54920)
+  (64-bit) installed once per PC. `MapViewEditor.exe` needs nothing extra.
+- The exes are unsigned, so Windows SmartScreen may warn on first run —
+  choose **More info → Run anyway**. Everything still runs 100% locally.
+
+## Quick start (from source)
 
 ```bash
 pip install -r relabeler/requirements.txt -r mapview-editor/requirements.txt
