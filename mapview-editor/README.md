@@ -61,7 +61,7 @@ Open http://localhost:5111 and drop a `.mvdb` file onto the page.
 
 ## .mvdb format
 
-A `.mvdb` is a 7-zip archive containing:
+See [METHOD.md](METHOD.md) for the full format and edit-pipeline writeup. In short, a `.mvdb` is a 7-zip archive containing:
 
 - `mapinfo` — JSON index listing all maps (file key, building group, floor name)
 - `mapNNNN.json` — per-map JSON with device positions (hex ID + x/y) and zone polygons (WKT POLYGON coordinates)

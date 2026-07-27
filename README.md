@@ -53,6 +53,9 @@ localhost and do all processing on your machine.
 - [`relabeler/METHOD.md`](relabeler/METHOD.md) — how the backup → relabel →
   rebuild process works under the hood (file format, two-column label sync,
   ODBC editing, safe repackaging, import steps).
+- [`mapview-editor/METHOD.md`](mapview-editor/METHOD.md) — the `.mvdb` format
+  and edit pipeline (mapinfo index, per-map JSON, device markers vs zone WKT
+  polygons and the y-flip trap, safe repack, PNG optimization).
 - [`mapview-editor/FLOORPLAN_STANDARD.md`](mapview-editor/FLOORPLAN_STANDARD.md) —
   floorplan image guidelines (one map per floor, indexed-color PNG, ~55–60%
   size savings).
