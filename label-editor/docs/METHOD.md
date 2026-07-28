@@ -118,7 +118,7 @@ In SensorView (v14.x):
 
 ## 5. What the tools automate
 
-The web tool (`app.py`) and CLI (`cli.py`) wrap the pipeline above with
+The web tool (`server.py`) and CLI (`cli.py`) wrap the pipeline above with
 validation (rules in §3), a CSV rename-list workflow, and safe repackaging.
 The rename list itself can be produced however you like — by hand for small
 jobs, or generated (e.g. with an AI assistant working from the extracted label

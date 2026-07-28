@@ -8,7 +8,7 @@ _relabeled.svdb to import in SensorView.
 Runs entirely on localhost — the backup never leaves the machine (it contains hashed
 passwords in its Users table). The original file is never modified.
 
-Run:  py app.py    then open http://127.0.0.1:5000
+Run:  py server.py    then open http://127.0.0.1:5000
 """
 from __future__ import annotations
 

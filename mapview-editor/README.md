@@ -26,13 +26,13 @@ Load an exported `.mvdb`, edit floorplans, devices, and zones in the browser, th
 ## Install
 
 ```bash
-pip install -r requirements.txt
+py -m pip install -r requirements.txt
 ```
 
 ## Usage
 
 ```bash
-python server.py
+py server.py
 ```
 
 Open http://localhost:5111 and drop a `.mvdb` file onto the page.
@@ -55,7 +55,7 @@ Open http://localhost:5111 and drop a `.mvdb` file onto the page.
 | `4` | Draw zone tool |
 | `5` | Edit zone tool |
 | `F` | Fit map to view |
-| `Del` | Delete selected item |
+| `Del` / `Backspace` | Delete selected item |
 | `Esc` | Deselect |
 | `Ctrl+S` | Save current map |
 

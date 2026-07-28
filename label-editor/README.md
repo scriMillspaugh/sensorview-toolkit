@@ -14,8 +14,8 @@ surgery, and you get a new backup to import.
 > Always keep your original backup and review results before importing.
 
 ## How it works
-1. **Load** a `.svdb` backup — or a bare `sensor.mdb` database file — and it
-   reads every device and zone with its current label.
+1. **Load** a `.svdb` or `.svdo` backup — or a bare `sensor.mdb` database file —
+   and it reads every device and zone with its current label and notes.
 2. **Provide new labels** — type them into the table (web tool), or fill in a
    CSV rename list (either tool).
 3. **Validate** — checks the labeling rules (see below).
