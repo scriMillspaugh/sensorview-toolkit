@@ -3,7 +3,7 @@
 This documents how the MapView Editor takes apart, edits, and rebuilds a
 SensorView **MapView export** (`.mvdb`) — for anyone who wants to understand
 the file format or reproduce the process. It is the companion to
-[`../relabeler/METHOD.md`](../relabeler/METHOD.md), which covers the `.svdb`
+[`label-editor/docs/METHOD.md`](../../label-editor/docs/METHOD.md), which covers the `.svdb`
 database backup.
 
 ## 1. The file format
@@ -36,7 +36,7 @@ appending a `mapinfo` entry with the next free number and creating the matching
 
 - **Devices** are hex-ID markers with an x/y position. The `id` joins to
   `Devices.DeviceID` in the `.svdb` database — this is the link between the two
-  tools: the relabeler renames a device, MapView shows where it lives.
+  tools: the Label Editor renames a device, MapView shows where it lives.
 - **Zones** are polygons in WKT (`POLYGON((x y, x y, ...))`) with an owning
   parent device (typically a bridge) and port.
 

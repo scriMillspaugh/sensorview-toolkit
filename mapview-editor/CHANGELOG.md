@@ -28,3 +28,6 @@ Initial public release.
 - Version reporting: badge in the editor header, `/api/version`, and the startup
   banner. Git branch/commit is appended when running from a clone and omitted in
   the exe, where no repository is present.
+
+[1.0.1]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/mapview-editor-v1.0.1
+[1.0.0]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/mapview-editor-v1.0.0

@@ -1,5 +1,5 @@
 """
-Core relabel engine for the SensorView backup relabeler web tool.
+Core relabel engine for the SensorView Label Editor web tool.
 
 Mirrors the tested logic in ../updater/update_labels.py:
   - a .svdb is a 7-zip archive containing sensor.mdb (MS Access JET4)
@@ -13,7 +13,7 @@ This module has no web dependencies so it can be unit-tested and packaged.
 """
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import os
 import re
@@ -24,7 +24,7 @@ from pathlib import Path
 import py7zr
 import pyodbc
 
-LABELING_DOCS = "https://github.com/scriMillspaugh/sensorview-toolkit/blob/main/LABELING.md"
+LABELING_DOCS = "https://github.com/scriMillspaugh/sensorview-toolkit/blob/main/label-editor/docs/LABELING.md"
 
 # Hard limits, measured from the sensor.mdb schema (not from BACnet, which is far
 # looser — 255 max, ~50 in practice). Access SILENTLY TRUNCATES an over-length

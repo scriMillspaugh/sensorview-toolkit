@@ -11,7 +11,7 @@ Load an exported `.mvdb`, edit floorplans, devices, and zones in the browser, th
 - **Device editing** — select, move, add, and remove device markers
 - **Zone editing** — draw new zone polygons, reshape vertices, delete zones
 - **Image replacement** — swap floorplan PNGs for any map
-- **Automatic image optimization on export** — floorplan PNGs are losslessly re-encoded to indexed color where possible, typically ~55-60% smaller with no visual change (see [FLOORPLAN_STANDARD.md](FLOORPLAN_STANDARD.md))
+- **Automatic image optimization on export** — floorplan PNGs are losslessly re-encoded to indexed color where possible, typically ~55-60% smaller with no visual change (see [FLOORPLAN_STANDARD.md](docs/FLOORPLAN_STANDARD.md))
 - **Properties panel** — edit device IDs, positions, zone IDs, parent devices, ports
 - **Pan & zoom** — scroll to zoom, drag to pan, `F` to fit
 - **Keyboard shortcuts** — `1`–`5` for tools, `Del` to delete, `Ctrl+S` to save
@@ -61,7 +61,7 @@ Open http://localhost:5111 and drop a `.mvdb` file onto the page.
 
 ## .mvdb format
 
-See [METHOD.md](METHOD.md) for the full format and edit-pipeline writeup. In short, a `.mvdb` is a 7-zip archive containing:
+See [METHOD.md](docs/METHOD.md) for the full format and edit-pipeline writeup. In short, a `.mvdb` is a 7-zip archive containing:
 
 - `mapinfo` — JSON index listing all maps (file key, building group, floor name)
 - `mapNNNN.json` — per-map JSON with device positions (hex ID + x/y) and zone polygons (WKT POLYGON coordinates)
@@ -71,12 +71,16 @@ See [METHOD.md](METHOD.md) for the full format and edit-pipeline writeup. In sho
 
 ```
 py -m pip install pyinstaller
-py -m PyInstaller --onefile --name MapViewEditor --add-data "static;static" --add-data "templates;templates" server.py
+py -m PyInstaller --clean --onefile --name MapViewEditor-v1.0.1 --add-data "static;static" --add-data "templates;templates" server.py
 ```
 
-Output: `dist/MapViewEditor.exe`. Double-clicking it starts the server and opens
-the browser. The UI assets are bundled; no extra installs needed (unlike the
-Relabeler, this tool does not use the Access Database Engine).
+Output: `dist/MapViewEditor-v1.0.1.exe`. Double-clicking it starts the server and
+opens the browser. The UI assets are bundled; no extra installs needed (unlike the
+Label Editor, this tool does not use the Access Database Engine).
+
+The version goes in the filename so a download is identifiable on sight — bump it
+to match `__version__` on every release. Always pass `--clean`: PyInstaller will
+otherwise reuse a stale `build/` cache and silently produce an unchanged binary.
 
 ## License
 

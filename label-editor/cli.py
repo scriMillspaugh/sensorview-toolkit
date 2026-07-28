@@ -1,5 +1,5 @@
 """
-SensorView Backup Relabeler — command-line interface.
+SensorView Label Editor — command-line interface.
 
 Applies a rename list (crosswalk CSVs) to a SensorView .svdb backup and writes a
 new _relabeled.svdb. Same engine as the web tool (core.py); the original file is
@@ -16,7 +16,7 @@ The Notes column is optional and maps to SensorView's UserComments (200 chars).
 See examples/ for templates.
 
 Labeling rules and the recommended naming format:
-  https://github.com/scriMillspaugh/sensorview-toolkit/blob/main/LABELING.md
+  https://github.com/scriMillspaugh/sensorview-toolkit/blob/main/label-editor/docs/LABELING.md
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def load_map(path, id_col, label_col):
 
 def main():
     ap = argparse.ArgumentParser(description="Relabel a SensorView .svdb backup (or bare sensor.mdb) from crosswalk CSVs.")
-    ap.add_argument("--version", action="version", version=f"relabeler {core.__version__}")
+    ap.add_argument("--version", action="version", version=f"label-editor {core.__version__}")
     ap.add_argument("svdb", help="Path to the .svdb backup (or a bare sensor.mdb database)")
     ap.add_argument("--devices", help="Device rename CSV (DeviceID,CurrentLabel,ProposedLabel)")
     ap.add_argument("--zones", help="Zone rename CSV (ZoneID,CurrentName,ProposedName)")

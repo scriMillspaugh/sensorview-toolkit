@@ -1,4 +1,4 @@
-# SensorView Backup Relabeler
+# SensorView Label Editor
 
 A small, **local** utility for batch-renaming device and zone labels inside an
 Acuity **SensorView** `.svdb` backup, then rebuilding the backup so the new
@@ -26,7 +26,7 @@ surgery, and you get a new backup to import.
    from the devices).
 
 ## Labeling rules enforced
-Full writeup: **[LABELING.md](../LABELING.md)**. In short, a label is refused if it
+Full writeup: **[LABELING.md](docs/LABELING.md)**. In short, a label is refused if it
 breaks any of these:
 - **Starts with a letter**, then letters, digits, underscores, or hyphens only —
   no spaces, symbols, slashes, math operators, or non-ASCII.
@@ -70,7 +70,7 @@ rewritten. Notes are not BACnet object names, so only the length limit applies.
 ## Run — web tool
 ```
 py -m pip install -r requirements.txt
-py app.py
+py server.py
 ```
 Opens `http://127.0.0.1:5000`. Load a backup, enter/upload labels, validate, download.
 
@@ -84,20 +84,25 @@ See `examples/` for the CSV formats.
 ## Build a standalone .exe (for PCs without Python)
 ```
 py -m pip install pyinstaller
-py -m PyInstaller --onefile --name SensorViewRelabeler app.py
+py -m PyInstaller --clean --onefile --name LabelEditor-v1.2.0 server.py
 ```
-Output: `dist/SensorViewRelabeler.exe`. It bundles Python and the Python
-dependencies, but **not** the Access Database Engine (a system driver) — that is a
-one-time per-PC install (see Prerequisites).
+Output: `dist/LabelEditor-v1.2.0.exe`. The version goes in the filename so a
+download is identifiable on sight — bump it to match `core.__version__` on every
+release. Always pass `--clean`: PyInstaller will otherwise reuse a stale `build/`
+cache and silently produce an unchanged binary.
+
+It bundles Python and the Python dependencies, but **not** the Access Database
+Engine (a system driver) — that is a one-time per-PC install (see Prerequisites).
 
 ## Layout
 | File | What |
 |---|---|
 | `core.py` | Relabel engine (extract → edit `sensor.mdb` → repackage). No web/UI deps. |
-| `app.py` | Local web tool (Flask) + single-page UI. |
+| `server.py` | Local web tool (Flask) + single-page UI. |
 | `cli.py` | Command-line front-end. |
-| `examples/` | Sample rename-list CSVs. |
-| `METHOD.md` | How the backup / relabel / rebuild process works, in detail. |
+| `examples/` | Sample rename-list CSVs, including the optional `Notes` column. |
+| `docs/METHOD.md` | How the backup / relabel / rebuild process works, in detail. |
+| `docs/LABELING.md` | What is enforced vs. recommended, and the naming format. |
 
 ## License
 MIT — see the repository root [LICENSE](../LICENSE).

@@ -13,47 +13,36 @@ your exports never leave the PC.
 
 | Tool | Works on | What it does |
 |---|---|---|
-| [**Relabeler**](relabeler/) | `.svdb` (database backup) or bare `sensor.mdb` | Batch-rename device and zone labels from a rename list (in-browser editor or CSV), validate against BMS naming rules, rebuild the backup for re-import. Includes a CLI. |
+| [**Label Editor**](label-editor/) | `.svdb` (database backup) or bare `sensor.mdb` | Batch-rename device and zone labels from a rename list (in-browser editor or CSV), edit per-device notes, validate against BACnet and SensorView limits, rebuild the backup for re-import. Includes a CLI. |
 | [**MapView Editor**](mapview-editor/) | `.mvdb` (MapView export) | Edit floorplans in the browser: move/add/remove device markers, draw and reshape zone polygons, rename/add/delete maps, swap floorplan images, auto-optimize PNGs on export. |
 
-Both tools follow the same pattern:
+Both follow the same pattern:
 
 ```
 export from SensorView ──► edit locally ──► rebuilt file ──► import into SensorView
         (original file is never modified)
 ```
 
+**Each tool's README has its own install, usage, and build instructions.** Start
+there — [Label Editor](label-editor/README.md) ·
+[MapView Editor](mapview-editor/README.md).
+
 ## Download (no Python needed)
 
-Standalone Windows builds of both tools are on the
-[**Releases page**](https://github.com/scriMillspaugh/sensorview-toolkit/releases) —
-download the `.exe`, double-click, and the tool opens in your browser.
-Each tool is versioned and released separately (tags `relabeler-vX.Y.Z` /
-`mapview-editor-vX.Y.Z`); see each tool's `CHANGELOG.md` for what changed.
+Standalone Windows builds are on the
+[**Releases page**](https://github.com/scriMillspaugh/sensorview-toolkit/releases).
+Download the `.exe`, double-click, and the tool opens in your browser.
 
-- `SensorViewRelabeler.exe` also needs the free
-  [Microsoft Access Database Engine](https://www.microsoft.com/en-us/download/details.aspx?id=54920)
-  (64-bit) installed once per PC. `MapViewEditor.exe` needs nothing extra.
-- The exes are unsigned, so Windows SmartScreen may warn on first run —
-  choose **More info → Run anyway**. Everything still runs 100% locally.
+Each tool is versioned and released separately — tags `label-editor-vX.Y.Z` and
+`mapview-editor-vX.Y.Z`, with the version in the filename
+(`LabelEditor-v1.2.0.exe`). See each tool's `CHANGELOG.md` for what changed.
 
-## Quick start (from source)
+The exes are unsigned, so Windows SmartScreen may warn on first run — choose
+**More info → Run anyway**. Everything still runs 100% locally.
 
-```bash
-pip install -r relabeler/requirements.txt -r mapview-editor/requirements.txt
-```
-
-**Relabeler** (labels): `python relabeler/app.py` → opens http://127.0.0.1:5000
-**MapView Editor** (floorplans): `python mapview-editor/server.py` → open http://localhost:5111
-
-They use different ports, so you can run both at once.
-
-### Extra requirement for the Relabeler
-The Relabeler opens the backup's Microsoft Access database, which needs the free
-**Microsoft Access Database Engine** installed (one-time, per PC):
-<https://www.microsoft.com/en-us/download/details.aspx?id=54920>
-Match its bitness (64-bit Python → 64-bit engine). The MapView Editor has no such
-requirement.
+> The Label Editor additionally needs the free
+> [Microsoft Access Database Engine](https://www.microsoft.com/en-us/download/details.aspx?id=54920)
+> (64-bit), installed once per PC. The MapView Editor needs nothing extra.
 
 ## Why local-only matters
 
@@ -62,20 +51,14 @@ and both file types describe your building layout and device network. These
 files should never be uploaded to third-party services. Both tools bind to
 localhost and do all processing on your machine.
 
-## Docs
+## Reference
 
-- [`LABELING.md`](LABELING.md) — what the Relabeler enforces (BACnet character
-  rules, the SensorView column limits, uniqueness) versus what it only
-  recommends, plus a naming format that holds up in a BMS.
-- [`relabeler/METHOD.md`](relabeler/METHOD.md) — how the backup → relabel →
-  rebuild process works under the hood (file format, two-column label sync,
-  ODBC editing, safe repackaging, import steps).
-- [`mapview-editor/METHOD.md`](mapview-editor/METHOD.md) — the `.mvdb` format
-  and edit pipeline (mapinfo index, per-map JSON, device markers vs zone WKT
-  polygons and the y-flip trap, safe repack, PNG optimization).
-- [`mapview-editor/FLOORPLAN_STANDARD.md`](mapview-editor/FLOORPLAN_STANDARD.md) —
-  floorplan image guidelines (one map per floor, indexed-color PNG, ~55–60%
-  size savings).
+- [Labeling practices](label-editor/docs/LABELING.md) — what the Label Editor
+  enforces (BACnet character rules, SensorView column limits, uniqueness) versus
+  what it only recommends, plus a naming format that holds up in a BMS.
+- [`.svdb` format and pipeline](label-editor/docs/METHOD.md)
+- [`.mvdb` format and pipeline](mapview-editor/docs/METHOD.md)
+- [Floorplan image guidelines](mapview-editor/docs/FLOORPLAN_STANDARD.md)
 
 ## License
 

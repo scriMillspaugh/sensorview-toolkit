@@ -1,5 +1,5 @@
 """
-SensorView Backup Relabeler — a local, browser-based tool.
+SensorView Label Editor — a local, browser-based tool.
 
 Load a SensorView .svdb backup (or a bare sensor.mdb), give devices/zones new labels (edit in the table
 or upload a filled CSV), validate against Acuity BMS rules, and download a rebuilt
@@ -129,7 +129,7 @@ def api_download(dl: str):
 # ── Single-page UI (inline so the tool packages as one file) ─────────────────
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SensorView Backup Relabeler</title>
+<title>SensorView Label Editor</title>
 <style>
   :root{--teal:#00778b;--ink:#1a2530;--bg:#f4f6f8;--line:#d5dde3;--bad:#c0392b;--ok:#1e8449;}
   *{box-sizing:border-box}
@@ -162,7 +162,7 @@ PAGE = r"""<!doctype html>
   .hidden{display:none}
   a.dl{display:inline-block;margin-top:10px;background:var(--ok);color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none}
 </style></head><body>
-<header><h1>SensorView Backup Relabeler <span style="opacity:.6;font-size:13px;font-weight:400">v{{VERSION}}</span></h1>
+<header><h1>SensorView Label Editor <span style="opacity:.6;font-size:13px;font-weight:400">v{{VERSION}}</span></h1>
 <p>Local tool — the backup stays on this machine. The original file is never modified.</p></header>
 <main>
   <div class="note"><b>How it works:</b> 1) Load a <code>.svdb</code> backup — or a bare <code>sensor.mdb</code> database. 2) Enter new labels in the table, or download the CSV template, fill it, and upload it. 3) Validate. 4) Apply &amp; download the rebuilt <code>_relabeled</code> file (same type as the input), then import it in SensorView (Import → Synchronize if labels don't push → do <b>not</b> Clear).

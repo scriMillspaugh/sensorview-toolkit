@@ -1,0 +1,4 @@
+DeviceID,CurrentLabel,ProposedLabel,Notes
+0000AAAA,OldHallwayPP,B1_01_101_PP_01,
+0000BBBB,Lobby OccSensor,B1_01_101_OS_01,Replaced sensor head 2026.01.15
+0000CCCC,08_$.29,,Bad label - fix before the next BMS sync

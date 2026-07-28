@@ -1,7 +1,26 @@
-# Changelog — Relabeler
+# Changelog — Label Editor
 
-All notable changes to the Relabeler. Versions follow [SemVer](https://semver.org/);
-release tags are `relabeler-vX.Y.Z`.
+All notable changes to the Label Editor. Versions follow [SemVer](https://semver.org/);
+release tags are `label-editor-vX.Y.Z` (`relabeler-vX.Y.Z` before 1.2.0).
+
+## [1.2.0] — 2026-07-28
+
+Renamed from "Relabeler" to "Label Editor" and reorganized. No change to how the
+tool reads, edits, or writes files.
+
+### Changed
+- **The tool is now `label-editor/`**, matching the `mapview-editor` convention.
+  Release tags become `label-editor-vX.Y.Z`; `relabeler-v1.1.0` stays as history.
+- **The exe carries its version** — `LabelEditor-v1.2.0.exe` rather than
+  `SensorViewRelabeler.exe`, so a download is identifiable on sight.
+- Entry point `app.py` → `server.py`, matching the MapView Editor.
+- Docs moved under `docs/`. `LABELING.md` came in from the repository root; a
+  redirect stub remains at the old path because the shipped v1.1.0 exe links to it.
+- The UI, `--help`, and `--version` all say "Label Editor".
+
+### Fixed
+- The example CSVs in `examples/` were missing the `Notes` column added in 1.1.0,
+  so they no longer matched the template the tool generates.
 
 ## [1.1.0] — 2026-07-28
 
@@ -32,7 +51,7 @@ you can ignore, and the notes field is editable.
   free text. New Notes column in the table, a `Notes` column in the CSV template
   (optional on import), and writes on Apply. Blank means unchanged; an unedited
   note is never rewritten. Length-checked only, since it isn't a BACnet name.
-- **[LABELING.md](../LABELING.md)** — what the tools enforce versus what they
+- **[LABELING.md](docs/LABELING.md)** — what the tools enforce versus what they
   recommend, with the schema evidence and the recommended naming format. Linked
   from the web UI header, the CLI help, and the advisory output.
 
@@ -57,3 +76,6 @@ Initial public release.
 - Safe repackaging from the archive's original member list (excludes the
   Access `.ldb` lock file); the original input file is never modified.
 - Standalone Windows exe (`SensorViewRelabeler.exe`) via PyInstaller.
+
+[1.2.0]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/label-editor-v1.2.0
+[1.1.0]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/relabeler-v1.1.0
