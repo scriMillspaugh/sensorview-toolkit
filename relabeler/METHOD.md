@@ -56,18 +56,34 @@ original.svdb ──7z extract──► sensor.mdb ──ODBC UPDATE──► se
    member list instead.
 4. **Never touch the original.** Output to a new `*_relabeled.svdb`.
 
-## 3. Naming rules (why validation is strict)
+## 3. Naming rules (what validation enforces, and why)
 
 Labels flow into **BACnet object names** on nLight ECLYPSE (nECY) controllers.
-Acuity's BMS integration guidance imposes:
+Two independent sets of limits apply — see `LABELING.md` for the full writeup.
 
-- Letters/digits/underscores only — dashes, `$`, and spaces break BACnet points.
-  (`$` is a common habit from electrical drawings; it must go.)
-- Must start with a **letter**.
-- **Max 20 characters** (device label columns are Text(20)).
-- Labels must be **unique** or points collide.
+**Character rules, from BACnet:** letters/digits plus `_` or `-`, starting with a
+letter. No spaces, symbols (`%&#$@?`), slashes, math operators, or non-ASCII. (`$`
+is a common habit from electrical drawings; it must go.) Hyphens are legal BACnet
+but Acuity documents the underscore as the nLight separator, so the tool accepts a
+hyphen and emits an advisory.
 
-A convention that worked well in practice:
+**Length, from the SensorView schema — not from BACnet:**
+
+| Column | Type |
+|---|---|
+| `Devices.UserLabelCurrent`, `UserLabelAuthority` | `VARCHAR(20)` |
+| `Zones.ZoneName`, `ZoneNameCurrent` | `VARCHAR(50)` |
+| `Devices.UserComments`, `Zones.UserComments` | `VARCHAR(200)` |
+
+BACnet allows 255. SensorView's columns are the binding constraint, and **Access
+truncates an over-length write silently** — 30 chars in, 20 stored, no error. That
+is why length is validated up front rather than left to the database. Truncation
+also forges duplicates out of labels that differed only past the cutoff.
+
+Labels must also be **unique** or points collide. Notes (`UserComments`) are free
+text: length-checked only, no character or uniqueness rules.
+
+A convention that worked well in practice (recommended, never enforced):
 ```
 Zone:    {BLDG}_{FLR}_{AREA}          e.g. B1_03_101
 Device:  {BLDG}_{FLR}_{ROOM}_{TYPE}_{SEQ}   e.g. B1_03_101_PP_01

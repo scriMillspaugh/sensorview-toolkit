@@ -26,8 +26,10 @@ export from SensorView ──► edit locally ──► rebuilt file ──► i
 ## Download (no Python needed)
 
 Standalone Windows builds of both tools are on the
-[**Releases page**](https://github.com/scriMillspaugh/sensorview-toolkit/releases/latest) —
+[**Releases page**](https://github.com/scriMillspaugh/sensorview-toolkit/releases) —
 download the `.exe`, double-click, and the tool opens in your browser.
+Each tool is versioned and released separately (tags `relabeler-vX.Y.Z` /
+`mapview-editor-vX.Y.Z`); see each tool's `CHANGELOG.md` for what changed.
 
 - `SensorViewRelabeler.exe` also needs the free
   [Microsoft Access Database Engine](https://www.microsoft.com/en-us/download/details.aspx?id=54920)
@@ -62,6 +64,9 @@ localhost and do all processing on your machine.
 
 ## Docs
 
+- [`LABELING.md`](LABELING.md) — what the Relabeler enforces (BACnet character
+  rules, the SensorView column limits, uniqueness) versus what it only
+  recommends, plus a naming format that holds up in a BMS.
 - [`relabeler/METHOD.md`](relabeler/METHOD.md) — how the backup → relabel →
   rebuild process works under the hood (file format, two-column label sync,
   ODBC editing, safe repackaging, import steps).

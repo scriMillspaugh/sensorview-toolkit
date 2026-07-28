@@ -8,7 +8,7 @@ _relabeled.svdb to import in SensorView.
 Runs entirely on localhost — the backup never leaves the machine (it contains hashed
 passwords in its Users table). The original file is never modified.
 
-Run:  py webtool/app.py    then open http://127.0.0.1:5000
+Run:  py app.py    then open http://127.0.0.1:5000
 """
 from __future__ import annotations
 
@@ -39,7 +39,8 @@ def _local_only(resp: Response) -> Response:
 
 @app.route("/")
 def index() -> Response:
-    return Response(PAGE, mimetype="text/html")
+    page = PAGE.replace("{{VERSION}}", core.__version__).replace("{{DOCS}}", core.LABELING_DOCS)
+    return Response(page, mimetype="text/html")
 
 
 @app.route("/api/load", methods=["POST"])
@@ -72,8 +73,16 @@ def api_load():
 @app.route("/api/validate", methods=["POST"])
 def api_validate():
     data = request.get_json(force=True)
-    problems = core.validate(data.get("devices", {}), data.get("zones", {}))
-    return jsonify({"ok": not problems, "problems": problems})
+    devices, zones = data.get("devices", {}), data.get("zones", {})
+    dnotes, znotes = data.get("deviceNotes", {}), data.get("zoneNotes", {})
+    problems = core.validate(devices, zones, dnotes, znotes)
+    # Advisories are naming-convention notes — reported, never blocking.
+    return jsonify({
+        "ok": not problems,
+        "problems": problems,
+        "advisories": core.advisories(devices, zones),
+        "docs": core.LABELING_DOCS,
+    })
 
 
 @app.route("/api/apply", methods=["POST"])
@@ -85,14 +94,16 @@ def api_apply():
         return jsonify({"error": "Session expired — please reload the backup."}), 400
     dev_map = {k: v for k, v in data.get("devices", {}).items() if (v or "").strip()}
     zone_map = {k: v for k, v in data.get("zones", {}).items() if (v or "").strip()}
-    if not dev_map and not zone_map:
-        return jsonify({"error": "No new labels entered — nothing to apply."}), 400
+    dev_notes = {k: v for k, v in data.get("deviceNotes", {}).items() if (v or "").strip()}
+    zone_notes = {k: v for k, v in data.get("zoneNotes", {}).items() if (v or "").strip()}
+    if not dev_map and not zone_map and not dev_notes and not zone_notes:
+        return jsonify({"error": "No new labels or notes entered — nothing to apply."}), 400
     stem, ext = os.path.splitext(os.path.basename(sess["name"]))
     ext = ext or ".svdb"  # output mirrors the input type (.svdb/.svdo archive or bare .mdb)
     out_dir = tempfile.mkdtemp(prefix="svout_")
     out_path = os.path.join(out_dir, f"{stem}_relabeled{ext}")
     try:
-        summary = core.relabel(sess["svdb_path"], dev_map, zone_map, out_path)
+        summary = core.relabel(sess["svdb_path"], dev_map, zone_map, out_path, dev_notes, zone_notes)
     except ValueError as e:  # validation failure
         return jsonify({"error": str(e)}), 400
     except Exception as e:  # noqa: BLE001
@@ -147,13 +158,15 @@ PAGE = r"""<!doctype html>
   #status{font-size:13px}
   .pill{display:inline-block;background:#e7edf1;border-radius:12px;padding:1px 9px;font-size:12px;margin-left:6px}
   .problems{color:var(--bad);font-size:12.5px;white-space:pre-wrap;margin-top:8px}
+  .advisories{color:#8a5a00;font-size:12.5px;white-space:pre-wrap;margin-top:8px}
   .hidden{display:none}
   a.dl{display:inline-block;margin-top:10px;background:var(--ok);color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none}
 </style></head><body>
-<header><h1>SensorView Backup Relabeler</h1>
+<header><h1>SensorView Backup Relabeler <span style="opacity:.6;font-size:13px;font-weight:400">v{{VERSION}}</span></h1>
 <p>Local tool — the backup stays on this machine. The original file is never modified.</p></header>
 <main>
-  <div class="note"><b>How it works:</b> 1) Load a <code>.svdb</code> backup — or a bare <code>sensor.mdb</code> database. 2) Enter new labels in the table, or download the CSV template, fill it, and upload it. 3) Validate. 4) Apply &amp; download the rebuilt <code>_relabeled</code> file (same type as the input), then import it in SensorView (Import → Synchronize if labels don't push → do <b>not</b> Clear).</div>
+  <div class="note"><b>How it works:</b> 1) Load a <code>.svdb</code> backup — or a bare <code>sensor.mdb</code> database. 2) Enter new labels in the table, or download the CSV template, fill it, and upload it. 3) Validate. 4) Apply &amp; download the rebuilt <code>_relabeled</code> file (same type as the input), then import it in SensorView (Import → Synchronize if labels don't push → do <b>not</b> Clear).
+  <br><a href="{{DOCS}}" target="_blank" rel="noopener">Labeling practices &amp; recommended naming format →</a></div>
 
   <div class="card" id="loadCard">
     <div class="row">
@@ -177,20 +190,21 @@ PAGE = r"""<!doctype html>
     </div>
     <div class="row" style="margin-bottom:8px">
       <input type="text" id="filter" placeholder="Filter rows…" style="max-width:280px">
-      <span class="muted" id="editHint">Leave a New Label blank to keep the current one.</span>
+      <span class="muted" id="editHint">Leave a field blank to keep what's there. Notes are SensorView's <code>UserComments</code> — free text, 200 chars.</span>
     </div>
-    <div class="scroll"><table><thead><tr><th style="width:120px">ID</th><th>Current label</th><th style="width:38%">New label</th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div class="scroll"><table><thead><tr><th style="width:110px">ID</th><th>Current label</th><th style="width:26%">New label</th><th style="width:30%">Notes</th></tr></thead><tbody id="tbody"></tbody></table></div>
     <div class="row" style="margin-top:14px">
       <button id="validateBtn">Validate</button>
       <button id="applyBtn">Apply &amp; download</button>
       <span id="status"></span>
     </div>
     <div class="problems" id="problems"></div>
+    <div class="advisories" id="advisories"></div>
     <div id="dlWrap"></div>
   </div>
 </main>
 <script>
-const S={token:null,name:null,devices:[],zones:[],labels:{devices:{},zones:{}},tab:"devices"};
+const S={token:null,name:null,devices:[],zones:[],labels:{devices:{},zones:{}},notes:{devices:{},zones:{}},tab:"devices"};
 const $=id=>document.getElementById(id);
 function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
@@ -201,7 +215,7 @@ $("loadBtn").onclick=async()=>{
   const r=await fetch("/api/load",{method:"POST",body:fd}); const d=await r.json();
   $("loadBtn").disabled=false;
   if(!r.ok){$("loadMsg").textContent="⚠ "+d.error;return;}
-  S.token=d.token;S.name=d.name;S.devices=d.devices;S.zones=d.zones;S.labels={devices:{},zones:{}};
+  S.token=d.token;S.name=d.name;S.devices=d.devices;S.zones=d.zones;S.labels={devices:{},zones:{}};S.notes={devices:{},zones:{}};
   $("loadMsg").textContent="Loaded with driver: "+d.driver;
   $("fileName").textContent=d.name;
   $("devCount").textContent=d.devices.length+" devices";
@@ -211,15 +225,20 @@ $("loadBtn").onclick=async()=>{
 };
 
 function rows(){return S.tab==="devices"?S.devices:S.zones;}
+// A note box shows the stored UserComments until it's edited; the edit is what
+// gets written. Leaving it untouched writes nothing.
+function noteVal(x){const n=S.notes[S.tab]; return n[x.id]!==undefined?n[x.id]:(x.notes||"");}
 function renderTable(){
   const flt=$("filter").value.toLowerCase();
-  const store=S.labels[S.tab];
-  const html=rows().filter(x=>!flt||x.id.toLowerCase().includes(flt)||(x.current||"").toLowerCase().includes(flt)||(store[x.id]||"").toLowerCase().includes(flt))
+  const store=S.labels[S.tab], notes=S.notes[S.tab];
+  const html=rows().filter(x=>!flt||x.id.toLowerCase().includes(flt)||(x.current||"").toLowerCase().includes(flt)||(store[x.id]||"").toLowerCase().includes(flt)||noteVal(x).toLowerCase().includes(flt))
     .map(x=>`<tr><td class="cur">${esc(x.id)}</td><td class="cur">${esc(x.current)}</td>
-      <td><input type="text" data-id="${esc(x.id)}" value="${esc(store[x.id]||"")}"></td></tr>`).join("");
+      <td><input type="text" data-id="${esc(x.id)}" data-f="label" value="${esc(store[x.id]||"")}"></td>
+      <td><input type="text" data-id="${esc(x.id)}" data-f="note" maxlength="200" value="${esc(noteVal(x))}"></td></tr>`).join("");
   $("tbody").innerHTML=html;
   $("tbody").querySelectorAll("input").forEach(inp=>{
-    inp.oninput=()=>{ const v=inp.value; if(v.trim())store[inp.dataset.id]=v; else delete store[inp.dataset.id]; inp.classList.remove("bad"); };
+    const bag=inp.dataset.f==="note"?notes:store;
+    inp.oninput=()=>{ const v=inp.value; if(v.trim())bag[inp.dataset.id]=v; else delete bag[inp.dataset.id]; inp.classList.remove("bad"); };
   });
 }
 $("filter").oninput=renderTable;
@@ -231,8 +250,8 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
 $("tplBtn").onclick=()=>{
   const which=S.tab, hdrId=which==="devices"?"DeviceID":"ZoneID", hdrCur=which==="devices"?"CurrentLabel":"CurrentName", hdrNew=which==="devices"?"ProposedLabel":"ProposedName";
   const store=S.labels[which];
-  let csv=hdrId+","+hdrCur+","+hdrNew+"\n";
-  rows().forEach(x=>{csv+=`${x.id},${csvq(x.current)},${csvq(store[x.id]||"")}\n`;});
+  let csv=hdrId+","+hdrCur+","+hdrNew+",Notes\n";
+  rows().forEach(x=>{csv+=`${x.id},${csvq(x.current)},${csvq(store[x.id]||"")},${csvq(noteVal(x))}\n`;});
   const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a");
   a.href=URL.createObjectURL(blob); a.download=which+"_rename_template.csv"; a.click();
 };
@@ -245,13 +264,19 @@ $("csv").onchange=async e=>{
   const head=parseCsvLine(lines[0]).map(h=>h.trim());
   const iId=head.findIndex(h=>/^(DeviceID|ZoneID)$/i.test(h));
   const iNew=head.findIndex(h=>/^(ProposedLabel|ProposedName)$/i.test(h));
+  const iNote=head.findIndex(h=>/^(Notes|UserComments)$/i.test(h));  // optional
   if(iId<0||iNew<0){alert("CSV needs an ID column (DeviceID/ZoneID) and a ProposedLabel/ProposedName column.");return;}
-  const which=/ZoneID/i.test(head[iId])?"zones":"devices"; const store=S.labels[which];
-  let n=0;
+  const which=/ZoneID/i.test(head[iId])?"zones":"devices"; const store=S.labels[which], notes=S.notes[which];
+  const byId={}; (which==="zones"?S.zones:S.devices).forEach(x=>byId[x.id]=x);
+  let n=0,m=0;
   for(let i=1;i<lines.length;i++){const c=parseCsvLine(lines[i]);const id=(c[iId]||"").trim();const nl=(c[iNew]||"").trim();
-    if(id&&nl){store[id]=nl;n++;}}
+    if(id&&nl){store[id]=nl;n++;}
+    if(id&&iNote>=0){const nt=(c[iNote]||"").trim();
+      // Only a CHANGED note counts — re-uploading an unedited template must not
+      // queue thousands of no-op writes.
+      if(nt&&nt!==((byId[id]||{}).notes||"")){notes[id]=nt;m++;}}}
   S.tab=which; document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===which));
-  renderTable(); $("status").textContent=`Loaded ${n} new ${which} labels from CSV.`;
+  renderTable(); $("status").textContent=`Loaded ${n} new ${which} labels`+(iNote>=0?` and ${m} changed note(s)`:"")+" from CSV.";
 };
 function parseCsvLine(line){const out=[];let cur="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];
   if(q){if(ch=='"'){if(line[i+1]=='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
@@ -259,24 +284,28 @@ function parseCsvLine(line){const out=[];let cur="",q=false;for(let i=0;i<line.l
   out.push(cur);return out;}
 
 $("validateBtn").onclick=async()=>{
-  $("problems").textContent=""; $("status").textContent="Validating…";
-  const r=await fetch("/api/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({devices:S.labels.devices,zones:S.labels.zones})});
+  $("problems").textContent=""; $("advisories").textContent=""; $("status").textContent="Validating…";
+  const r=await fetch("/api/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({devices:S.labels.devices,zones:S.labels.zones,deviceNotes:S.notes.devices,zoneNotes:S.notes.zones})});
   const d=await r.json();
   markBad(d.problems);
-  if(d.ok){$("status").textContent="✓ Valid — "+countFilled()+" labels ready.";$("status").style.color="var(--ok)";}
+  const adv=d.advisories||[];
+  if(adv.length)$("advisories").textContent="⚠ "+(adv.length-1)+" naming-convention note(s) — these do not block Apply:\n"+adv.join("\n");
+  if(d.ok){$("status").textContent="✓ Valid — "+countFilled()+" edit(s) ready.";$("status").style.color="var(--ok)";}
   else{$("status").textContent="✗ "+d.problems.length+" problem(s):";$("status").style.color="var(--bad)";$("problems").textContent=d.problems.join("\n");}
 };
-function countFilled(){return Object.keys(S.labels.devices).length+Object.keys(S.labels.zones).length;}
+function countFilled(){return Object.keys(S.labels.devices).length+Object.keys(S.labels.zones).length
+  +Object.keys(S.notes.devices).length+Object.keys(S.notes.zones).length;}
 function markBad(problems){
   document.querySelectorAll("#tbody input").forEach(i=>i.classList.remove("bad"));
-  const badLabels=new Set((problems||[]).map(p=>{const m=p.match(/'([^']+)'/);return m?m[1]:null;}).filter(Boolean));
+  // Note problems quote only a truncated preview, so match on label problems only.
+  const badLabels=new Set((problems||[]).filter(p=>!/ note: /.test(p)).map(p=>{const m=p.match(/'([^']+)'/);return m?m[1]:null;}).filter(Boolean));
   document.querySelectorAll("#tbody input").forEach(i=>{if(badLabels.has(i.value.trim()))i.classList.add("bad");});
 }
 
 $("applyBtn").onclick=async()=>{
-  if(!countFilled()){$("status").textContent="Enter at least one new label first.";return;}
+  if(!countFilled()){$("status").textContent="Enter at least one new label or note first.";return;}
   $("applyBtn").disabled=true;$("status").style.color="";$("status").textContent="Applying and rebuilding backup…";$("dlWrap").innerHTML="";
-  const r=await fetch("/api/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:S.token,devices:S.labels.devices,zones:S.labels.zones})});
+  const r=await fetch("/api/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:S.token,devices:S.labels.devices,zones:S.labels.zones,deviceNotes:S.notes.devices,zoneNotes:S.notes.zones})});
   const d=await r.json(); $("applyBtn").disabled=false;
   if(!r.ok){$("status").style.color="var(--bad)";$("status").textContent="✗ "+d.error;$("problems").textContent=d.error;return;}
   $("status").style.color="var(--ok)";

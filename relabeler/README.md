@@ -26,12 +26,32 @@ surgery, and you get a new backup to import.
    from the devices).
 
 ## Labeling rules enforced
-These mirror the constraints that keep BACnet point names valid:
-- Uses only letters, digits, and underscores; **starts with a letter**.
-- **Maximum 20 characters.**
+Full writeup: **[LABELING.md](../LABELING.md)**. In short, a label is refused if it
+breaks any of these:
+- **Starts with a letter**, then letters, digits, underscores, or hyphens only —
+  no spaces, symbols, slashes, math operators, or non-ASCII.
+- **Length:** devices ≤ 20 chars, zones ≤ 50, notes ≤ 200. These come from the
+  `sensor.mdb` column widths, not from BACnet (which allows 255). Access
+  **truncates silently** on overflow, so the check has to happen before the write.
 - **No duplicate** labels (devices and zones checked separately).
-- Floor token (the second `_`-separated field, when present) is `01`–`12`, `P1`,
-  or `PH` — a guard against a common room-number mis-parse. `Site`-level names are allowed.
+
+**The tool does not impose a naming scheme** beyond those rules — use whatever
+convention your site already uses.
+
+### Advisory notes (never block)
+Validate also reports notes you are free to ignore:
+- A label uses a hyphen. Legal BACnet, but Acuity documents the underscore as the
+  nLight separator.
+- The second `_`-separated field isn't `01`–`12`, `P1`, or `PH`. That's the
+  recommended format (`{BLDG}_{FLR}_{AREA}`), and the note catches a common
+  room-number mis-parse — a bare `816_PP` reading as "floor 81". If your site
+  names floors differently, expect the note and move on.
+
+## Notes (UserComments)
+Devices and zones each carry a free-text `UserComments` field, 200 characters.
+The table shows it in a **Notes** column, the CSV template round-trips it, and
+edits are written on Apply. Blank means unchanged, and an unedited note is never
+rewritten. Notes are not BACnet object names, so only the length limit applies.
 
 ## Safety model
 - **Runs entirely on `localhost`.** The backup never leaves the machine. A SensorView
