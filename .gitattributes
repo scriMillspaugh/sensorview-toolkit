@@ -1,0 +1,35 @@
+# Normalize line endings so the repo stores LF regardless of who commits.
+# Without this, a Windows checkout and a macOS/Linux checkout produce
+# whole-file diffs on the same unchanged source.
+* text=auto
+
+# Source and docs: LF in the repo. Git still checks these out as CRLF on
+# Windows, so editors there behave normally.
+*.py    text diff=python
+*.js    text
+*.html  text
+*.css   text
+*.md    text
+*.txt   text
+*.csv   text
+*.yml   text
+*.yaml  text
+*.json  text
+
+# Windows-only shell scripts must keep CRLF or cmd.exe mis-parses them.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Never touch these — line-ending conversion corrupts binaries, and the
+# SensorView export formats are 7-zip archives.
+*.exe   binary
+*.dll   binary
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.svdb  binary
+*.svdo  binary
+*.mvdb  binary
+*.mdb   binary
+*.7z    binary
+*.zip   binary
