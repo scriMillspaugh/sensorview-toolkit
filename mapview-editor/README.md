@@ -71,16 +71,24 @@ See [METHOD.md](docs/METHOD.md) for the full format and edit-pipeline writeup. I
 
 ```
 py -m pip install pyinstaller
-py -m PyInstaller --clean --onefile --name MapViewEditor-v1.0.1 --add-data "static;static" --add-data "templates;templates" server.py
+py -m PyInstaller --clean --onefile --name "MapViewEditor-v$(py -c 'import server; print(server.__version__)')" --add-data "static;static" --add-data "templates;templates" server.py
 ```
 
-Output: `dist/MapViewEditor-v1.0.1.exe`. Double-clicking it starts the server and
-opens the browser. The UI assets are bundled; no extra installs needed (unlike the
-Label Editor, this tool does not use the Access Database Engine).
+Output: `dist/MapViewEditor-v<version>.exe` — for example `MapViewEditor-v1.0.1.exe`.
+Double-clicking it starts the server and opens the browser. The UI assets are
+bundled; no extra installs needed (unlike the Label Editor, this tool does not use
+the Access Database Engine).
 
-The version goes in the filename so a download is identifiable on sight — bump it
-to match `__version__` on every release. Always pass `--clean`: PyInstaller will
-otherwise reuse a stale `build/` cache and silently produce an unchanged binary.
+The version is read from `__version__` rather than typed, so the filename can never
+drift from the build. (The `$(...)` form works in both PowerShell and bash.)
+
+Two rules worth keeping:
+
+- **The version belongs in the filename**, so a download in someone's Downloads
+  folder identifies itself without being run. Never ship a bare `MapViewEditor.exe`.
+- **Always pass `--clean`.** Otherwise PyInstaller reuses the `build/` cache, stops
+  at `checking EXE`, and exits 0 having produced an unchanged binary. Confirm a
+  real build by running the exe and reading back the version it reports.
 
 ## License
 

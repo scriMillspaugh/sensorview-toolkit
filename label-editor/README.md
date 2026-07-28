@@ -84,12 +84,20 @@ See `examples/` for the CSV formats.
 ## Build a standalone .exe (for PCs without Python)
 ```
 py -m pip install pyinstaller
-py -m PyInstaller --clean --onefile --name LabelEditor-v1.2.0 server.py
+py -m PyInstaller --clean --onefile --name "LabelEditor-v$(py -c 'import core; print(core.__version__)')" server.py
 ```
-Output: `dist/LabelEditor-v1.2.0.exe`. The version goes in the filename so a
-download is identifiable on sight — bump it to match `core.__version__` on every
-release. Always pass `--clean`: PyInstaller will otherwise reuse a stale `build/`
-cache and silently produce an unchanged binary.
+
+Output: `dist/LabelEditor-v<version>.exe` — for example `LabelEditor-v1.2.0.exe`.
+The version is read from `core.__version__` rather than typed, so the filename can
+never drift from the build. (The `$(...)` form works in both PowerShell and bash.)
+
+Two rules worth keeping:
+
+- **The version belongs in the filename**, so a download in someone's Downloads
+  folder identifies itself without being run. Never ship a bare `LabelEditor.exe`.
+- **Always pass `--clean`.** Otherwise PyInstaller reuses the `build/` cache, stops
+  at `checking EXE`, and exits 0 having produced an unchanged binary. Confirm a
+  real build by running the exe and reading back the version it reports.
 
 It bundles Python and the Python dependencies, but **not** the Access Database
 Engine (a system driver) — that is a one-time per-PC install (see Prerequisites).
