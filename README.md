@@ -65,6 +65,19 @@ localhost and do all processing on your machine.
 - [`.mvdb` format and pipeline](mapview-editor/docs/METHOD.md)
 - [Floorplan image guidelines](mapview-editor/docs/FLOORPLAN_STANDARD.md)
 
+## Support
+
+These tools are free and always will be. If they saved you an afternoon:
+
+- **[Give to Seattle Children's](https://give.seattlechildrens.org/give/284150)** —
+  to direct it at the team behind these tools, choose **Other Area of Support**
+  and enter **Research Building & Engineering**. The giving form cannot be
+  pre-filled from a link, so that step has to be done by hand.
+- **[Buy me a coffee](https://venmo.com/u/spawahh)** — Venmo, if you would
+  rather say thanks directly.
+
+Neither is expected, and neither buys support or priority on issues.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

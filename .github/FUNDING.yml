@@ -1,0 +1,11 @@
+# Powers the "Sponsor" button on the repository page.
+#
+# Both entries are `custom` URLs. Venmo is not one of GitHub's built-in
+# platforms, and the Seattle Children's giving page is a Classy campaign
+# rather than a supported provider, so neither maps to a native key.
+#
+# GitHub renders custom entries by hostname, so these appear as
+# give.seattlechildrens.org and venmo.com in the dropdown.
+custom:
+  - https://give.seattlechildrens.org/give/284150
+  - https://venmo.com/u/spawahh
