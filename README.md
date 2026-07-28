@@ -35,7 +35,12 @@ Download the `.exe`, double-click, and the tool opens in your browser.
 
 Each tool is versioned and released separately — tags `label-editor-vX.Y.Z` and
 `mapview-editor-vX.Y.Z`, with the version in the filename
-(`LabelEditor-v1.2.0.exe`). See each tool's `CHANGELOG.md` for what changed.
+(`LabelEditor-v1.2.0.exe`). See each tool's changelog for what changed:
+[Label Editor](label-editor/CHANGELOG.md) ·
+[MapView Editor](mapview-editor/CHANGELOG.md).
+
+You will also see one older `relabeler-v1.1.0` release — that is the Label Editor
+under its previous name, kept for history. Use the latest release.
 
 The exes are unsigned, so Windows SmartScreen may warn on first run — choose
 **More info → Run anyway**. Everything still runs 100% locally.
