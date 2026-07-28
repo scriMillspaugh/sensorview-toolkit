@@ -916,8 +916,9 @@ async function loadVersionBadge() {
     const res = await fetch("/api/version");
     const v = await res.json();
     const dirtyFlag = v.dirty ? "+" : "";
-    badge.textContent = `${v.branch}@${v.commit}${dirtyFlag}`;
-    badge.title = `Commit: ${v.commit}${dirtyFlag}\nBranch: ${v.branch}\nDate: ${v.commitDate || "unknown"}\nRepo: ${v.repoPath}`;
+    const git = v.commit && v.commit !== "unknown" ? ` (${v.branch}@${v.commit}${dirtyFlag})` : "";
+    badge.textContent = `v${v.version || "?"}${git}`;
+    badge.title = `Version: ${v.version || "unknown"}\nCommit: ${v.commit}${dirtyFlag}\nBranch: ${v.branch}\nDate: ${v.commitDate || "unknown"}`;
   } catch {
     badge.textContent = "";
   }

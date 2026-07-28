@@ -1,5 +1,7 @@
 """MapView Editor — local Flask server for editing .mvdb floorplan archives."""
 
+__version__ = "1.0.0"
+
 import io
 import json
 import os
@@ -62,6 +64,7 @@ def get_version():
     commit_date = _git("log", "-1", "--format=%ci")
     dirty = bool(_git("status", "--porcelain"))
     return jsonify(
+        version=__version__,
         branch=branch or "unknown",
         commit=commit or "unknown",
         commitDate=commit_date,
@@ -332,7 +335,7 @@ def _save_map_json(file_key):
 
 
 if __name__ == "__main__":
-    print("MapView Editor running at http://localhost:5111")
+    print(f"MapView Editor v{__version__} running at http://localhost:5111")
     # debug/reloader off: the reloader re-executes the process, which breaks
     # PyInstaller onefile builds (and debug tracebacks aren't for end users).
     Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:5111")).start()
