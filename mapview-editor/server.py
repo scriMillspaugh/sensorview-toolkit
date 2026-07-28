@@ -1,6 +1,6 @@
 """MapView Editor — local Flask server for editing .mvdb floorplan archives."""
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import io
 import json
@@ -69,7 +69,6 @@ def get_version():
         commit=commit or "unknown",
         commitDate=commit_date,
         dirty=dirty,
-        repoPath=str(REPO_DIR),
     )
 
 

@@ -3,6 +3,12 @@
 All notable changes to the MapView Editor. Versions follow [SemVer](https://semver.org/);
 release tags are `mapview-editor-vX.Y.Z`.
 
+## [1.0.1] — 2026-07-28
+
+- `/api/version` no longer returns `repoPath`. Nothing consumed it — the header
+  badge dropped it in 1.0.0 — and from a clone it exposed the local filesystem
+  path over the API.
+
 ## [1.0.0] — 2026-07-27
 
 Initial public release.
