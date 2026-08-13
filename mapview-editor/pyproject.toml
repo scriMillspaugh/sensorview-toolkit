@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mapview-editor"
+dynamic = ["version"]
+description = "Local web editor for Acuity nLight SensorView MapView (.mvdb) floorplan archives — with an MCP server so AI assistants can help build drawings."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "scriMillspaugh" }]
+keywords = ["nlight", "sensorview", "mapview", "mvdb", "acuity", "lighting", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: Other Audience",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Home Automation",
+]
+dependencies = [
+    "flask>=3.0",
+    "py7zr>=1.0",
+    "pillow>=10.0",
+    "mcp>=1.0",
+    # Database labels need the Access ODBC driver and are Windows-only anyway.
+    "pyodbc>=5.0; sys_platform == 'win32'",
+]
+
+[project.urls]
+Homepage = "https://github.com/scriMillspaugh/sensorview-toolkit"
+Changelog = "https://github.com/scriMillspaugh/sensorview-toolkit/blob/main/mapview-editor/CHANGELOG.md"
+Documentation = "https://github.com/scriMillspaugh/sensorview-toolkit/blob/main/mapview-editor/docs/METHOD.md"
+
+[project.scripts]
+mapview-editor = "mapview_editor.server:main"
+mapview-editor-mcp = "mapview_editor.mcp_server:main"
+
+[tool.setuptools]
+packages = ["mapview_editor"]
+
+[tool.setuptools.package-data]
+mapview_editor = ["static/*", "templates/*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mapview_editor.server.__version__" }

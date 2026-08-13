@@ -11,16 +11,18 @@ top-left, matching the floorplan PNG and device markers. Zone polygons are
 stored y-up in the archive; this server converts on read and write so callers
 never deal with the flip.
 
-Usage:
-  1. Start the editor:  py server.py   (and load a .mvdb, or use load_mvdb)
-  2. Register with Claude Code:  claude mcp add mapview -- py mcp_server.py
+Usage (pip install mapview-editor):
+  1. Start the editor:  mapview-editor   (or let the start_editor tool do it)
+  2. Register with Claude Code:  claude mcp add mapview -- mapview-editor-mcp
 
-Requires:  py -m pip install mcp
+From a source checkout: py mapview_editor/mcp_server.py works too.
 """
 
 import json
 import os
 import re
+import subprocess
+import sys
 import urllib.error
 import urllib.request
 import uuid
@@ -58,7 +60,7 @@ def _request(method: str, path: str, body: dict | None = None) -> dict:
     except urllib.error.URLError as e:
         raise RuntimeError(
             f"MapView Editor is not reachable at {BASE}. "
-            f"Start it first: py server.py  ({e.reason})"
+            f"Start it with the start_editor tool, or run: mapview-editor  ({e.reason})"
         )
 
 
@@ -89,7 +91,7 @@ def _post_file(path: str, filepath: str) -> dict:
     except urllib.error.URLError as e:
         raise RuntimeError(
             f"MapView Editor is not reachable at {BASE}. "
-            f"Start it first: py server.py  ({e.reason})"
+            f"Start it with the start_editor tool, or run: mapview-editor  ({e.reason})"
         )
 
 
@@ -142,6 +144,36 @@ def get_status() -> dict:
         "note": "No maps loaded — load a .mvdb in the browser or call load_mvdb."
                 if not mapinfo.get("maps") else "Ready.",
     }
+
+
+@mcp.tool()
+def start_editor() -> dict:
+    """Start the MapView Editor server if it isn't already running. Launches
+    it detached on localhost:5111 (the user's browser opens automatically)."""
+    try:
+        version = _request("GET", "/api/version").get("version")
+        return {"ok": True, "alreadyRunning": True, "version": version}
+    except RuntimeError:
+        pass
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP
+                                   | subprocess.DETACHED_PROCESS)
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen([sys.executable, "-m", "mapview_editor"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     **kwargs)
+    import time
+    for _ in range(20):
+        time.sleep(0.5)
+        try:
+            version = _request("GET", "/api/version").get("version")
+            return {"ok": True, "alreadyRunning": False, "version": version}
+        except RuntimeError:
+            continue
+    raise RuntimeError("Editor did not come up on port 5111 within 10s — "
+                       "start it manually: mapview-editor")
 
 
 @mcp.tool()
@@ -387,5 +419,9 @@ def export_mvdb(dest_path: str) -> dict:
             "sizeBytes": len(content)}
 
 
-if __name__ == "__main__":
+def main():
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

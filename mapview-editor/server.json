@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.scrimillspaugh/mapview-editor",
+  "description": "Edit Acuity nLight SensorView MapView floorplans: read maps, place and move device markers, draw zones, search devices, and export .mvdb archives through the local MapView Editor.",
+  "repository": {
+    "url": "https://github.com/scriMillspaugh/sensorview-toolkit",
+    "source": "github"
+  },
+  "version": "1.3.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "mapview-editor",
+      "version": "1.3.0",
+      "transport": { "type": "stdio" },
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        { "type": "positional", "value": "--from", "isRequired": true },
+        { "type": "positional", "value": "mapview-editor", "isRequired": true },
+        { "type": "positional", "value": "mapview-editor-mcp", "isRequired": true }
+      ]
+    }
+  ]
+}

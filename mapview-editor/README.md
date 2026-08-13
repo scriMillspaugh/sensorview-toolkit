@@ -28,6 +28,14 @@ Load an exported `.mvdb`, edit floorplans, devices, and zones in the browser, th
 
 ## Install
 
+From PyPI (editor + MCP server, with commands on your PATH):
+
+```bash
+py -m pip install mapview-editor
+```
+
+Or from a source checkout:
+
 ```bash
 py -m pip install -r requirements.txt
 ```
@@ -35,8 +43,10 @@ py -m pip install -r requirements.txt
 ## Usage
 
 ```bash
-py server.py
+mapview-editor
 ```
+
+(From a source checkout: `py mapview_editor/server.py` or `py -m mapview_editor`.)
 
 Open http://localhost:5111 and drop a `.mvdb` file onto the page.
 
@@ -65,23 +75,23 @@ Open http://localhost:5111 and drop a `.mvdb` file onto the page.
 
 ## MCP integration (let Claude build drawings)
 
-`mcp_server.py` is a [Model Context Protocol](https://modelcontextprotocol.io) server that
-gives an AI assistant editing tools: list/read maps, add/move/remove device markers, draw
-and delete zones, search devices across maps, load files, and export. It drives the running
-editor server, and the browser UI live-syncs — you watch the drawing build in real time.
-If you have unsaved manual edits, the sync warns instead of overwriting them.
+The package includes a [Model Context Protocol](https://modelcontextprotocol.io) server
+(`mapview-editor-mcp`, registry name `io.github.scrimillspaugh/mapview-editor`) that
+gives an AI assistant editing tools: start the editor, list/read maps, add/move/remove
+device markers, draw and delete zones, search devices across maps, load files, and
+export. It drives the running editor server, and the browser UI live-syncs — you watch
+the drawing build in real time. If you have unsaved manual edits, the sync warns
+instead of overwriting them.
+
+Register with Claude Code:
 
 ```bash
-py -m pip install mcp
+claude mcp add mapview -- mapview-editor-mcp
 ```
 
-Start the editor (`py server.py`), then register the MCP server with Claude Code:
-
-```bash
-claude mcp add mapview -- py mcp_server.py
-```
-
-(For Claude Desktop, add the same command under `mcpServers` in its config.)
+(For Claude Desktop, add the same command under `mcpServers` in its config. From a
+source checkout, use `py mapview_editor/mcp_server.py` instead.) The editor doesn't
+need to be running first — the `start_editor` tool launches it.
 
 All MCP tools speak image coordinates — x right, y down, matching the floorplan PNG —
 and the server handles the zone y-flip internally. Placing a marker positions an existing
@@ -99,7 +109,7 @@ See [METHOD.md](docs/METHOD.md) for the full format and edit-pipeline writeup. I
 
 ```
 py -m pip install pyinstaller
-py -m PyInstaller --clean --onefile --name "MapViewEditor-v$(py -c 'import server; print(server.__version__)')" --add-data "static;static" --add-data "templates;templates" server.py
+py -m PyInstaller --clean --onefile --name "MapViewEditor-v$(py -c 'import mapview_editor.server as s; print(s.__version__)')" --add-data "mapview_editor/static;static" --add-data "mapview_editor/templates;templates" exe_entry.py
 ```
 
 Output: `dist/MapViewEditor-v<version>.exe` — for example `MapViewEditor-v1.0.1.exe`.
@@ -123,3 +133,6 @@ Two rules worth keeping:
 ## License
 
 MIT — see the repository root [LICENSE](../LICENSE).
+
+<!-- MCP registry ownership marker -->
+mcpName: io.github.scrimillspaugh/mapview-editor

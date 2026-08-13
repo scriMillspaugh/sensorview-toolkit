@@ -1,6 +1,6 @@
 """MapView Editor — local Flask server for editing .mvdb floorplan archives."""
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 import io
 import json
@@ -16,7 +16,10 @@ from threading import Timer
 import py7zr
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
-import dblabels
+try:
+    from . import dblabels  # installed package / py -m mapview_editor
+except ImportError:
+    import dblabels  # direct run: py mapview_editor/server.py, and PyInstaller
 
 # When frozen by PyInstaller, bundled data lives under sys._MEIPASS, not the cwd.
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -431,9 +434,13 @@ def _save_map_json(file_key):
     )
 
 
-if __name__ == "__main__":
+def main():
     print(f"MapView Editor v{__version__} running at http://localhost:5111")
     # debug/reloader off: the reloader re-executes the process, which breaks
     # PyInstaller onefile builds (and debug tracebacks aren't for end users).
     Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:5111")).start()
     app.run(host="127.0.0.1", port=5111, debug=False)
+
+
+if __name__ == "__main__":
+    main()

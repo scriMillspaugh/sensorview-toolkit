@@ -3,6 +3,17 @@
 All notable changes to the MapView Editor. Versions follow [SemVer](https://semver.org/);
 release tags are `mapview-editor-vX.Y.Z`.
 
+## [1.3.0] — 2026-08-13
+
+- **Installable package.** `pip install mapview-editor` now provides
+  `mapview-editor` (web editor) and `mapview-editor-mcp` (MCP server) commands.
+  Source moved into the `mapview_editor/` package; `py -m mapview_editor` and
+  direct `py mapview_editor/server.py` both still work. Published to PyPI via
+  GitHub Actions trusted publishing on tag push, and registered in the MCP
+  registry as `io.github.scrimillspaugh/mapview-editor` (`server.json`).
+- New MCP tool `start_editor` — launches the editor if it isn't running, so an
+  assistant can go from nothing to editing without a manual step.
+
 ## [1.2.0] — 2026-08-13
 
 - **Device search (`Ctrl+F`).** Search box in the top bar matches device IDs —
@@ -88,6 +99,7 @@ Initial public release.
   banner. Git branch/commit is appended when running from a clone and omitted in
   the exe, where no repository is present.
 
+[1.3.0]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/mapview-editor-v1.3.0
 [1.2.0]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/mapview-editor-v1.2.0
 [1.1.0]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/mapview-editor-v1.1.0
 [1.0.1]: https://github.com/scriMillspaugh/sensorview-toolkit/releases/tag/mapview-editor-v1.0.1

@@ -8,6 +8,7 @@ env/
 # PyInstaller build output
 build/
 dist/
+*.egg-info/
 *.spec
 
 # Never commit real exports or rename lists (they carry site data;
