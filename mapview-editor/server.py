@@ -1,6 +1,6 @@
 """MapView Editor — local Flask server for editing .mvdb floorplan archives."""
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 import io
 import json
@@ -16,6 +16,8 @@ from threading import Timer
 import py7zr
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
+import dblabels
+
 # When frozen by PyInstaller, bundled data lives under sys._MEIPASS, not the cwd.
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
@@ -28,6 +30,12 @@ app = Flask(
 WORK_DIR = None
 MAP_DATA = {}
 MAP_INFO = {"version": 1, "maps": []}
+# Read-only database labels live in their own temp dir, never WORK_DIR: the
+# Access driver drops a sensor.ldb lock next to the .mdb, and the export loop
+# must never be able to see it.
+LABELS = None
+LABELS_SOURCE = None
+LABELS_DIR = None
 REPO_DIR = Path(__file__).resolve().parent
 
 
@@ -109,6 +117,67 @@ def upload_mvdb():
             MAP_DATA[fkey] = {"width": 4000, "height": 3000, "zones": [], "subzones": [], "devices": []}
 
     return jsonify(ok=True, mapinfo=MAP_INFO)
+
+
+def _label_stats():
+    """Count how many map devices/zones have a label in the loaded database."""
+    md = td = mz = tz = 0
+    for data in MAP_DATA.values():
+        for d in data.get("devices", []):
+            td += 1
+            if str(d.get("id", "")).strip().upper() in LABELS["devices"]:
+                md += 1
+        for z in data.get("zones", []):
+            tz += 1
+            key = f"{str(z.get('ParentDeviceID', '')).strip().upper()}:{z.get('Port')}"
+            if str(z.get("id")) in LABELS["zones"] or key in LABELS["zonesByParent"]:
+                mz += 1
+    return {"devicesMatched": md, "devicesTotal": td,
+            "zonesMatched": mz, "zonesTotal": tz}
+
+
+@app.route("/api/labels", methods=["POST"])
+def upload_labels():
+    """Load a SensorView database (.svdb/.svdo/.mdb) read-only for display labels."""
+    global LABELS, LABELS_SOURCE, LABELS_DIR
+
+    f = request.files.get("file")
+    if not f:
+        return jsonify(error="No file uploaded"), 400
+
+    new_dir = tempfile.mkdtemp(prefix="mvdb_labels_")
+    staged = Path(new_dir) / Path(f.filename).name
+    f.save(str(staged))
+    try:
+        mdb = dblabels.stage_mdb(str(staged), new_dir)
+        labels = dblabels.read_labels(mdb)  # connection closed inside
+    except dblabels.LabelsUnavailable as e:
+        shutil.rmtree(new_dir, ignore_errors=True)
+        return jsonify(error=str(e), unavailable=True), 503
+    except Exception as e:
+        shutil.rmtree(new_dir, ignore_errors=True)
+        return jsonify(error=f"Could not read database: {e}"), 400
+
+    if LABELS_DIR:
+        shutil.rmtree(LABELS_DIR, ignore_errors=True)
+    LABELS_DIR, LABELS, LABELS_SOURCE = new_dir, labels, Path(f.filename).name
+    return jsonify(ok=True, source=LABELS_SOURCE, stats=_label_stats(), **labels)
+
+
+@app.route("/api/labels")
+def get_labels():
+    if LABELS is None:
+        return jsonify(loaded=False)
+    return jsonify(loaded=True, source=LABELS_SOURCE, stats=_label_stats(), **LABELS)
+
+
+@app.route("/api/labels", methods=["DELETE"])
+def clear_labels():
+    global LABELS, LABELS_SOURCE, LABELS_DIR
+    if LABELS_DIR:
+        shutil.rmtree(LABELS_DIR, ignore_errors=True)
+    LABELS = LABELS_SOURCE = LABELS_DIR = None
+    return jsonify(ok=True)
 
 
 @app.route("/api/mapinfo")

@@ -357,6 +357,63 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--bg3); }
 
+/* Database labels */
+.canvas-inner svg .device-label {
+  font-size: 12px;
+  fill: var(--accent2);
+  paint-order: stroke;
+  stroke: rgba(0,0,0,0.75);
+  stroke-width: 3px;
+  pointer-events: none;
+}
+.labels-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.labels-badge .labels-clear {
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+}
+.device-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  background: rgba(22,33,62,0.92);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--fg);
+  z-index: 50;
+  max-height: 40%;
+  overflow-y: auto;
+}
+.device-legend .legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+  white-space: nowrap;
+}
+.device-legend .legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid #fff;
+  flex-shrink: 0;
+}
+
 /* Tooltip */
 .device-tooltip {
   position: fixed;
@@ -380,6 +437,12 @@ body {
   <span id="versionBadge" title="" style="font-size:11px;color:var(--fg2);font-family:monospace;cursor:default"></span>
   <span class="spacer"></span>
   <span id="statusText" style="font-size:12px;color:var(--fg2)"></span>
+  <span class="labels-badge" id="labelsBadge" style="display:none">
+    <span id="labelsBadgeText"></span>
+    <button class="labels-clear" id="btnClearLabels" title="Clear database labels">×</button>
+  </span>
+  <button class="btn" id="btnLoadDb" style="display:none" title="Load a SensorView database (.svdb) to show device names — read-only">Load Database</button>
+  <input type="file" id="dbInput" accept=".svdb,.svdo,.mdb" style="display:none">
   <button class="btn primary" id="btnExport" style="display:none">Export .mvdb</button>
 </div>
 
@@ -415,6 +478,7 @@ body {
       <span class="sep"></span>
       <button class="tool-btn" id="btnReplaceImage">Replace Image</button>
       <input type="file" id="imageInput" accept="image/png,image/jpeg" style="display:none">
+      <button class="tool-btn" id="btnToggleLabels" style="display:none" title="Show or hide device names from the loaded database">Labels</button>
       <button class="tool-btn" id="btnDeleteSelected" style="display:none">Delete Selected</button>
       <span class="info" id="toolInfo"></span>
     </div>
@@ -425,6 +489,7 @@ body {
         <img id="floorplanImg" alt="Floorplan">
         <svg id="overlaySvg" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
+      <div class="device-legend" id="deviceLegend" style="display:none"></div>
     </div>
   </div>
 

@@ -13,6 +13,7 @@ Load an exported `.mvdb`, edit floorplans, devices, and zones in the browser, th
 - **Image replacement** — swap floorplan PNGs for any map
 - **Automatic image optimization on export** — floorplan PNGs are losslessly re-encoded to indexed color where possible, typically ~55-60% smaller with no visual change (see [FLOORPLAN_STANDARD.md](docs/FLOORPLAN_STANDARD.md))
 - **Properties panel** — edit device IDs, positions, zone IDs, parent devices, ports
+- **Database labels (read-only)** — optionally load a SensorView database backup (`.svdb` or a bare `sensor.mdb`) to show plain-language device and zone names instead of raw hex IDs: next to markers (toggleable), in tooltips, on zones, and in the properties panel. Dots are also color-coded by device model (with an on-map legend). The database is never modified and the exported `.mvdb` is unchanged
 - **Pan & zoom** — scroll to zoom, drag to pan, `F` to fit
 - **Keyboard shortcuts** — `1`–`5` for tools, `Del` to delete, `Ctrl+S` to save
 
@@ -22,6 +23,7 @@ Load an exported `.mvdb`, edit floorplans, devices, and zones in the browser, th
 - Flask
 - py7zr
 - Pillow (for image optimization on export — server still works without it, just skips optimization)
+- pyodbc + the [Microsoft Access Database Engine](https://www.microsoft.com/en-us/download/details.aspx?id=54920) (**only** for the optional database-label feature — everything else works without them)
 
 ## Install
 
@@ -76,8 +78,10 @@ py -m PyInstaller --clean --onefile --name "MapViewEditor-v$(py -c 'import serve
 
 Output: `dist/MapViewEditor-v<version>.exe` — for example `MapViewEditor-v1.0.1.exe`.
 Double-clicking it starts the server and opens the browser. The UI assets are
-bundled; no extra installs needed (unlike the Label Editor, this tool does not use
-the Access Database Engine).
+bundled; no extra installs needed for map editing. Only the optional
+database-label feature uses the Access Database Engine (a system component that
+is never bundled) — without it, loading a database shows a friendly message and
+everything else works normally.
 
 The version is read from `__version__` rather than typed, so the filename can never
 drift from the build. (The `$(...)` form works in both PowerShell and bash.)

@@ -15,7 +15,33 @@ const state = {
   drawPoints: [],       // for zone drawing
   editingVertex: null,  // { zoneIndex, vertexIndex }
   dirty: false,
+  labels: null,         // { devices, models, zones, zonesByParent } from /api/labels
+  showDeviceLabels: true,
+  familyColors: {},     // device family -> dot color, assigned when labels load
 };
+
+// Colorblind-safe categorical palette (Okabe-Ito + extras) for device families.
+const FAMILY_PALETTE = [
+  "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
+  "#D55E00", "#CC79A7", "#FFFFFF", "#B2DF8A", "#FB9A99",
+];
+
+// Group nLight model names into device families — a real site can have 20+
+// distinct models on one floor, far more than any palette can distinguish.
+// Prefixes are vendor product lines, not site conventions. Anything
+// unrecognized becomes its own group named by its first model token.
+function modelFamily(model) {
+  const m = String(model).trim().toUpperCase();
+  if (/^N?CM\b|^N?CM-|^NES\b|^NES-|^NWSX/.test(m)) return "Sensors";
+  if (m.startsWith("NPOD")) return "WallPods";
+  if (m.startsWith("NPP")) return "Power packs";
+  if (m.startsWith("NPS")) return "Power supplies";
+  if (m.startsWith("NIO")) return "I/O interfaces";
+  if (m.startsWith("NBRG") || m.startsWith("NGWY") || m.startsWith("NECY")) {
+    return "Backbone (bridge/gateway)";
+  }
+  return String(model).trim().split(/[-\s]/)[0];
+}
 
 // DOM refs
 const $ = (sel) => document.querySelector(sel);
@@ -38,6 +64,12 @@ const imageInput = $("#imageInput");
 const toolInfo = $("#toolInfo");
 const statusText = $("#statusText");
 const tooltip = $("#tooltip");
+const btnLoadDb = $("#btnLoadDb");
+const dbInput = $("#dbInput");
+const labelsBadge = $("#labelsBadge");
+const labelsBadgeText = $("#labelsBadgeText");
+const btnClearLabels = $("#btnClearLabels");
+const btnToggleLabels = $("#btnToggleLabels");
 
 // ─── File upload ───
 
@@ -78,7 +110,98 @@ function showEditor() {
   welcomeScreen.style.display = "none";
   sidebar.style.display = "flex";
   btnExport.style.display = "";
+  btnLoadDb.style.display = "";
   renderMapList();
+}
+
+// ─── Database labels (read-only overlay from a .svdb / sensor.mdb) ───
+
+function deviceLabel(id) {
+  if (!state.labels) return null;
+  return state.labels.devices[String(id || "").trim().toUpperCase()] || null;
+}
+
+function deviceModel(id) {
+  if (!state.labels) return null;
+  return state.labels.models[String(id || "").trim().toUpperCase()] || null;
+}
+
+function zoneLabel(z) {
+  if (!state.labels) return null;
+  const byId = state.labels.zones[String(z.id)];
+  if (byId) return byId;
+  const key = `${String(z.ParentDeviceID || "").trim().toUpperCase()}:${z.Port}`;
+  return state.labels.zonesByParent[key] || null;
+}
+
+function applyLabels(data) {
+  state.labels = {
+    devices: data.devices || {},
+    models: data.models || {},
+    zones: data.zones || {},
+    zonesByParent: data.zonesByParent || {},
+  };
+  state.familyColors = {};
+  const families = [...new Set(Object.values(state.labels.models).map(modelFamily))].sort();
+  families.forEach((f, i) => { state.familyColors[f] = FAMILY_PALETTE[i % FAMILY_PALETTE.length]; });
+  const s = data.stats || {};
+  labelsBadgeText.textContent =
+    `${data.source} — ${s.devicesMatched ?? 0}/${s.devicesTotal ?? 0} devices, ` +
+    `${s.zonesMatched ?? 0}/${s.zonesTotal ?? 0} zones matched`;
+  labelsBadge.style.display = "flex";
+  btnToggleLabels.style.display = "";
+  btnToggleLabels.classList.toggle("active", state.showDeviceLabels);
+  renderOverlay();
+  updatePropsPanel();
+}
+
+btnLoadDb.addEventListener("click", () => dbInput.click());
+dbInput.addEventListener("change", async () => {
+  const file = dbInput.files[0];
+  if (!file) return;
+  statusText.textContent = "Reading database...";
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const res = await fetch("/api/labels", { method: "POST", body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      applyLabels(data);
+      toast("Database labels loaded");
+    } else {
+      toast(data.error || "Could not read database");
+    }
+  } catch (err) {
+    toast("Database load failed: " + err.message);
+  }
+  statusText.textContent = "";
+  dbInput.value = "";
+});
+
+btnClearLabels.addEventListener("click", async () => {
+  try {
+    await fetch("/api/labels", { method: "DELETE" });
+  } catch { /* server state is best-effort; clear the UI regardless */ }
+  state.labels = null;
+  state.familyColors = {};
+  labelsBadge.style.display = "none";
+  btnToggleLabels.style.display = "none";
+  renderOverlay();
+  updatePropsPanel();
+});
+
+btnToggleLabels.addEventListener("click", () => {
+  state.showDeviceLabels = !state.showDeviceLabels;
+  btnToggleLabels.classList.toggle("active", state.showDeviceLabels);
+  renderOverlay();
+});
+
+async function rehydrateLabels() {
+  try {
+    const res = await fetch("/api/labels");
+    const data = await res.json();
+    if (data.loaded) applyLabels(data);
+  } catch { /* no labels loaded */ }
 }
 
 // ─── Map list ───
@@ -244,7 +367,7 @@ function renderOverlay() {
       "pointer-events": "none",
       opacity: "0.7",
     });
-    label.textContent = z.id;
+    label.textContent = zoneLabel(z) || z.id;
     overlaySvg.appendChild(label);
 
     // Vertex handles when editing
@@ -279,17 +402,34 @@ function renderOverlay() {
     });
   }
 
-  // Devices
+  // Devices — dot radius follows the map's own deviceScale setting so markers
+  // stay findable when a large floorplan is zoomed to fit.
   const devices = state.currentData.devices || [];
+  const baseR = (state.currentData.deviceScale || 20) / 2;
   devices.forEach((d, i) => {
     const g = svgEl("g", { class: "device-marker", "data-index": i });
     const isSelected = state.selection?.type === "device" && state.selection.index === i;
-    const r = isSelected ? 7 : 5;
+    const r = isSelected ? Math.round(baseR * 1.3) : baseR;
     const circle = svgEl("circle", {
       cx: d.x, cy: d.y, r: r,
       class: "device-dot" + (isSelected ? " selected" : ""),
     });
+    // Color by device family when the database is loaded. Inline style would
+    // beat the stylesheet's selected-gold, so only color unselected dots.
+    const model = deviceModel(d.id);
+    if (model && !isSelected && state.familyColors[modelFamily(model)]) {
+      circle.style.fill = state.familyColors[modelFamily(model)];
+    }
     g.appendChild(circle);
+
+    if (state.showDeviceLabels) {
+      const lbl = deviceLabel(d.id);
+      if (lbl) {
+        const t = svgEl("text", { x: d.x + r + 4, y: d.y + 4, class: "device-label" });
+        t.textContent = lbl;
+        g.appendChild(t);
+      }
+    }
 
     g.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -314,7 +454,9 @@ function renderOverlay() {
     });
 
     g.addEventListener("mouseenter", (e) => {
-      tooltip.textContent = d.id;
+      const lbl = deviceLabel(d.id);
+      const base = lbl ? `${lbl} (${d.id})` : d.id;
+      tooltip.textContent = model ? `${base} — ${model}` : base;
       tooltip.style.display = "block";
       tooltip.style.left = (e.clientX + 12) + "px";
       tooltip.style.top = (e.clientY - 8) + "px";
@@ -327,6 +469,40 @@ function renderOverlay() {
 
     overlaySvg.appendChild(g);
   });
+
+  updateLegend(devices);
+}
+
+// Legend of device families present on the current map. Memoized on content so
+// renderOverlay (which runs on every drag) doesn't rebuild the DOM needlessly.
+let legendKey = null;
+function updateLegend(devices) {
+  const legend = document.getElementById("deviceLegend");
+  const families = state.labels
+    ? [...new Set(devices.map(d => deviceModel(d.id)).filter(Boolean).map(modelFamily))].sort()
+    : [];
+  if (!families.length) {
+    legend.style.display = "none";
+    legendKey = null;
+    return;
+  }
+  const key = families.join("|");
+  if (key === legendKey) return;
+  legendKey = key;
+  legend.innerHTML = "";
+  for (const f of families) {
+    const row = document.createElement("div");
+    row.className = "legend-row";
+    const swatch = document.createElement("span");
+    swatch.className = "legend-swatch";
+    swatch.style.background = state.familyColors[f] || "var(--device)";
+    const name = document.createElement("span");
+    name.textContent = f; // family names can echo external model text — textContent only
+    row.appendChild(swatch);
+    row.appendChild(name);
+    legend.appendChild(row);
+  }
+  legend.style.display = "block";
 }
 
 function svgEl(tag, attrs) {
@@ -766,16 +942,25 @@ function updatePropsPanel() {
   if (type === "device") {
     const dev = state.currentData.devices[index];
     if (!dev) { propsPanel.classList.remove("visible"); return; }
+    const devLabelRow = state.labels
+      ? `<label>Label (from database)</label>
+      <input type="text" id="propDevLabel" readonly style="opacity:.7">`
+      : "";
     propsPanel.innerHTML = `
       <h3>Device</h3>
       <label>ID</label>
       <input type="text" value="${dev.id}" id="propDevId" style="font-family:monospace;text-transform:uppercase" maxlength="8">
+      ${devLabelRow}
       <div class="prop-row">
         <div><label>X</label><input type="number" value="${dev.x}" id="propDevX"></div>
         <div><label>Y</label><input type="number" value="${dev.y}" id="propDevY"></div>
       </div>
       <br>
       <button class="btn danger" id="propDelete">Delete Device</button>`;
+    if (state.labels) {
+      // DB labels are external data — assign via .value, never innerHTML.
+      propsPanel.querySelector("#propDevLabel").value = deviceLabel(dev.id) || "(no match)";
+    }
 
     const updateDev = () => {
       dev.id = propsPanel.querySelector("#propDevId").value.trim().toUpperCase();
@@ -794,10 +979,15 @@ function updatePropsPanel() {
     const zone = state.currentData.zones[index];
     if (!zone) { propsPanel.classList.remove("visible"); return; }
     const pts = parsePolygon(zone.coords);
+    const zoneLabelRow = state.labels
+      ? `<label>Label (from database)</label>
+      <input type="text" id="propZoneLabel" readonly style="opacity:.7">`
+      : "";
     propsPanel.innerHTML = `
       <h3>Zone</h3>
       <label>Zone ID</label>
       <input type="number" value="${zone.id}" id="propZoneId">
+      ${zoneLabelRow}
       <label>Parent Device ID</label>
       <input type="text" value="${zone.ParentDeviceID || ""}" id="propZoneParent" style="font-family:monospace;text-transform:uppercase">
       <label>Port</label>
@@ -805,6 +995,9 @@ function updatePropsPanel() {
       <label>Vertices: ${pts.length}</label>
       <br>
       <button class="btn danger" id="propDelete">Delete Zone</button>`;
+    if (state.labels) {
+      propsPanel.querySelector("#propZoneLabel").value = zoneLabel(zone) || "(no match)";
+    }
 
     const updateZone = () => {
       zone.id = parseInt(propsPanel.querySelector("#propZoneId").value) || zone.id;
@@ -927,3 +1120,4 @@ async function loadVersionBadge() {
 // ─── Init ───
 updateToolInfo();
 loadVersionBadge();
+rehydrateLabels();

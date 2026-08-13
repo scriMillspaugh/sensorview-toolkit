@@ -52,6 +52,34 @@ and flip back when writing. The flip is its own inverse, so a round-trip is
 lossless. If you build your own tooling against `.mvdb` files, this is the
 mistake you'll make first.
 
+### Joining the map to the database (read-only labels)
+
+The `.mvdb` never stores a device's name — only its hex ID. Plain-language
+labels live in the `.svdb` database backup (see the Label Editor's METHOD.md).
+Since v1.1.0 the editor can load a `.svdb` (or bare `sensor.mdb`) alongside the
+`.mvdb` and join the two for display:
+
+| Map data | Database | Notes |
+|---|---|---|
+| `devices[].id` | `Devices.DeviceID` → `UserLabelCurrent` + `ModelName` | both sides upper-cased and trimmed before comparing; the model drives dot color-coding |
+| `zones[].id` | `Zones.ZoneID` → `ZoneName` (falling back to `ZoneNameCurrent`) | primary join |
+| `zones[].ParentDeviceID` + `Port` | `Zones.ParentDeviceID` + `Port` | fallback join when the ZoneID doesn't match |
+
+The join is display-only and deliberately one-way:
+
+- The database is opened with `ReadOnly=1` and the connection is closed
+  immediately after reading — the source file is never modified.
+- Extraction happens in a **separate temp directory** from the `.mvdb` working
+  directory. The Access ODBC driver drops a `sensor.ldb` lock file next to the
+  database; keeping the directories apart means the export loop (which only
+  writes members referenced by `mapinfo`) can never encounter it.
+- Labels are never written into the exported `.mvdb` — the format has no field
+  for them, and the archive members are unchanged.
+
+Reading the database needs `pyodbc` and the Microsoft Access Database Engine
+(system ODBC driver). Without them the feature reports itself unavailable and
+the rest of the editor is unaffected.
+
 ## 2. The pipeline
 
 ```

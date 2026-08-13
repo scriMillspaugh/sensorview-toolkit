@@ -1,3 +1,4 @@
 flask>=3.0
 py7zr>=1.0
 pillow>=10.0
+pyodbc>=5.0  # optional at runtime — database labels only; the server runs without it
