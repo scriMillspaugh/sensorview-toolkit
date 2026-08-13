@@ -18,6 +18,7 @@ const state = {
   labels: null,         // { devices, models, zones, zonesByParent } from /api/labels
   showDeviceLabels: true,
   familyColors: {},     // device family -> dot color, assigned when labels load
+  pendingFocus: null,   // { id, x, y } — device to center/highlight after a map loads
 };
 
 // Colorblind-safe categorical palette (Okabe-Ito + extras) for device families.
@@ -64,6 +65,9 @@ const imageInput = $("#imageInput");
 const toolInfo = $("#toolInfo");
 const statusText = $("#statusText");
 const tooltip = $("#tooltip");
+const searchWrap = $("#searchWrap");
+const searchBox = $("#searchBox");
+const searchResults = $("#searchResults");
 const btnLoadDb = $("#btnLoadDb");
 const dbInput = $("#dbInput");
 const labelsBadge = $("#labelsBadge");
@@ -95,6 +99,7 @@ async function uploadFile(file) {
     const data = await res.json();
     if (data.ok) {
       state.mapinfo = data.mapinfo;
+      adoptRevision(data);
       showEditor();
       toast("Loaded " + state.mapinfo.maps.length + " maps");
     } else {
@@ -111,6 +116,7 @@ function showEditor() {
   sidebar.style.display = "flex";
   btnExport.style.display = "";
   btnLoadDb.style.display = "";
+  searchWrap.style.display = "";
   renderMapList();
 }
 
@@ -166,6 +172,8 @@ dbInput.addEventListener("change", async () => {
     const res = await fetch("/api/labels", { method: "POST", body: fd });
     const data = await res.json();
     if (data.ok) {
+      adoptRevision(data);
+      lastLabelsSource = data.source;
       applyLabels(data);
       toast("Database labels loaded");
     } else {
@@ -180,7 +188,9 @@ dbInput.addEventListener("change", async () => {
 
 btnClearLabels.addEventListener("click", async () => {
   try {
-    await fetch("/api/labels", { method: "DELETE" });
+    const res = await fetch("/api/labels", { method: "DELETE" });
+    adoptRevision(await res.json());
+    lastLabelsSource = null;
   } catch { /* server state is best-effort; clear the UI regardless */ }
   state.labels = null;
   state.familyColors = {};
@@ -200,9 +210,256 @@ async function rehydrateLabels() {
   try {
     const res = await fetch("/api/labels");
     const data = await res.json();
-    if (data.loaded) applyLabels(data);
+    if (data.loaded) {
+      applyLabels(data);
+    } else if (state.labels) {
+      // Cleared outside this browser (MCP/API) — drop the overlay too.
+      state.labels = null;
+      state.familyColors = {};
+      labelsBadge.style.display = "none";
+      btnToggleLabels.style.display = "none";
+      renderOverlay();
+      updatePropsPanel();
+    }
   } catch { /* no labels loaded */ }
 }
+
+// ─── Live sync (external edits from the MCP server / API) ───
+//
+// Every mutating server response carries a revision number; the browser adopts
+// the ones it caused itself. A 2-second poll spots revisions it didn't cause —
+// an MCP tool or curl changed something — and reloads the affected state so
+// external edits appear in the open editor as they happen.
+
+let lastRevision = null;
+let lastLabelsSource = null;
+
+function adoptRevision(data) {
+  if (data && typeof data.revision === "number") lastRevision = data.revision;
+}
+
+async function checkRevision() {
+  if (!state.mapinfo) return;
+  let info;
+  try {
+    info = await (await fetch("/api/revision")).json();
+  } catch { return; /* server briefly unreachable */ }
+  if (lastRevision === null) {
+    lastRevision = info.revision;
+    lastLabelsSource = info.labelsSource;
+    return;
+  }
+  if (info.revision === lastRevision) return;
+  lastRevision = info.revision;
+  const labelsChanged = info.labelsSource !== lastLabelsSource;
+  lastLabelsSource = info.labelsSource;
+  await onRemoteChange(labelsChanged);
+}
+
+async function onRemoteChange(labelsChanged) {
+  try {
+    const mi = await (await fetch("/api/mapinfo")).json();
+    state.mapinfo = mi;
+    renderMapList();
+    if (labelsChanged) await rehydrateLabels();
+
+    if (!state.currentMap) return;
+    if (!mi.maps.some(m => m.file === state.currentMap)) {
+      // The open map was deleted externally.
+      state.currentMap = null;
+      state.currentData = null;
+      state.selection = null;
+      toolbar.style.display = "none";
+      canvasWrap.style.display = "none";
+      propsPanel.classList.remove("visible");
+      toast("The open map was removed outside the editor");
+      return;
+    }
+    if (state.dirty) {
+      // Don't clobber local unsaved work; Marcus decides which version wins.
+      toast("Map changed outside the editor — Ctrl+S keeps your local edits");
+      return;
+    }
+    const res = await fetch(`/api/map/${state.currentMap}/data`);
+    state.currentData = await res.json();
+    flipDevicesFromStorage(state.currentData);
+    if (state.selection?.type === "device" &&
+        state.selection.index >= (state.currentData.devices || []).length) state.selection = null;
+    if (state.selection?.type === "zone" &&
+        state.selection.index >= (state.currentData.zones || []).length) state.selection = null;
+    renderOverlay();
+    updatePropsPanel();
+    statusText.textContent = "Synced external change";
+    setTimeout(() => { if (statusText.textContent === "Synced external change") statusText.textContent = ""; }, 2000);
+  } catch { /* transient — next poll retries */ }
+}
+
+setInterval(checkRevision, 2000);
+
+// ─── Device search (Ctrl+F) ───
+
+function mapDisplayName(fileKey) {
+  const entry = state.mapinfo?.maps.find(m => m.file === fileKey);
+  return entry ? `${entry.group ? entry.group + " / " : ""}${entry.name}` : fileKey;
+}
+
+async function fetchDeviceIndex() {
+  // Flush unsaved edits so the index reflects what's on screen.
+  if (state.dirty && state.currentMap) await saveCurrentMap();
+  const res = await fetch("/api/index");
+  return (await res.json()).devices || [];
+}
+
+function searchRow({ label, id, mapKey, note, onClick }) {
+  const row = document.createElement("div");
+  row.className = "search-row";
+  const name = document.createElement("span");
+  name.className = "sr-name";
+  name.textContent = label || "(no name)";
+  const idEl = document.createElement("span");
+  idEl.className = "sr-id";
+  idEl.textContent = id;
+  const mapEl = document.createElement("span");
+  mapEl.className = note ? "sr-dup" : "sr-map";
+  mapEl.textContent = note || mapDisplayName(mapKey);
+  row.appendChild(name);
+  row.appendChild(idEl);
+  row.appendChild(mapEl);
+  row.addEventListener("mousedown", (e) => { e.preventDefault(); onClick(); });
+  return row;
+}
+
+function renderSearchNote(text) {
+  const note = document.createElement("div");
+  note.className = "search-note";
+  note.textContent = text;
+  searchResults.appendChild(note);
+}
+
+async function runSearch(query) {
+  const q = query.trim().toUpperCase();
+  searchResults.innerHTML = "";
+  searchResults.style.display = "block";
+  let index;
+  try {
+    index = await fetchDeviceIndex();
+  } catch {
+    renderSearchNote("Search unavailable — is a .mvdb loaded?");
+    return;
+  }
+
+  if (!q) {
+    // Empty query: offer the duplicate check.
+    const dupRow = document.createElement("div");
+    dupRow.className = "search-row";
+    dupRow.textContent = "Check for duplicate device IDs on the same map";
+    dupRow.addEventListener("mousedown", (e) => { e.preventDefault(); showDuplicates(index); });
+    searchResults.appendChild(dupRow);
+    renderSearchNote("Type a device ID or name to search all maps.");
+    return;
+  }
+
+  const matches = index.filter(d => {
+    const id = String(d.id || "").toUpperCase();
+    if (id.includes(q)) return true;
+    const lbl = deviceLabel(d.id);
+    return lbl ? lbl.toUpperCase().includes(q) : false;
+  });
+
+  if (!matches.length) {
+    renderSearchNote(`No devices match "${query.trim()}".`);
+    return;
+  }
+  const MAX = 50;
+  for (const m of matches.slice(0, MAX)) {
+    searchResults.appendChild(searchRow({
+      label: deviceLabel(m.id),
+      id: m.id,
+      mapKey: m.map,
+      onClick: () => { closeSearch(); jumpToDevice(m); },
+    }));
+  }
+  const extra = matches.length > MAX ? ` — showing first ${MAX}` : "";
+  renderSearchNote(`${matches.length} match${matches.length === 1 ? "" : "es"}${extra}.`);
+}
+
+function showDuplicates(index) {
+  searchResults.innerHTML = "";
+  const counts = {};
+  for (const d of index) {
+    const key = `${d.map}|${String(d.id || "").toUpperCase()}`;
+    (counts[key] = counts[key] || []).push(d);
+  }
+  const dups = Object.values(counts).filter(list => list.length > 1);
+  if (!dups.length) {
+    renderSearchNote("No duplicate device IDs found on any single map.");
+    return;
+  }
+  for (const list of dups) {
+    for (const d of list) {
+      searchResults.appendChild(searchRow({
+        label: deviceLabel(d.id),
+        id: d.id,
+        mapKey: d.map,
+        note: `x${list.length} on ${mapDisplayName(d.map)}`,
+        onClick: () => { closeSearch(); jumpToDevice(d); },
+      }));
+    }
+  }
+  renderSearchNote(`${dups.length} duplicated ID${dups.length === 1 ? "" : "s"} (same device on different maps is not flagged).`);
+}
+
+function focusDevice(dev) {
+  // Center the view on the device, select it, and pulse a ring around it.
+  // `dev` comes from /api/index in STORAGE convention; in-memory device y is
+  // image-space, so flip for the exact-position match.
+  const devices = state.currentData.devices || [];
+  let idx = devices.findIndex(d => d.id === dev.id && d.x === dev.x && d.y === flipY(dev.y));
+  if (idx === -1) idx = devices.findIndex(d => d.id === dev.id);
+  if (idx === -1) return;
+  const target = devices[idx];
+  state.zoom = Math.max(state.zoom, 0.6);
+  state.pan.x = canvasWrap.clientWidth / 2 - target.x * state.zoom;
+  state.pan.y = canvasWrap.clientHeight / 2 - target.y * state.zoom;
+  applyTransform();
+  state.selection = { type: "device", index: idx };
+  renderOverlay();
+  updatePropsPanel();
+  btnDeleteSelected.style.display = "";
+  const ring = svgEl("circle", { cx: target.x, cy: target.y, class: "pulse-ring" });
+  overlaySvg.appendChild(ring);
+  setTimeout(() => ring.remove(), 4000);
+}
+
+function jumpToDevice(dev) {
+  if (dev.map === state.currentMap && state.currentData) {
+    focusDevice(dev);
+  } else {
+    // Map loads async; floorplanImg.onload applies the pending focus after fit.
+    state.pendingFocus = { id: dev.id, x: dev.x, y: dev.y };
+    loadMap(dev.map);
+  }
+}
+
+function closeSearch() {
+  searchResults.style.display = "none";
+  searchBox.blur();
+}
+
+let searchDebounce = null;
+searchBox.addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => runSearch(searchBox.value), 200);
+});
+searchBox.addEventListener("focus", () => runSearch(searchBox.value));
+searchBox.addEventListener("blur", () => setTimeout(() => { searchResults.style.display = "none"; }, 150));
+searchBox.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { searchBox.value = ""; closeSearch(); }
+  if (e.key === "Enter") {
+    const first = searchResults.querySelector(".search-row");
+    if (first) first.dispatchEvent(new Event("mousedown"));
+  }
+});
 
 // ─── Map list ───
 
@@ -261,6 +518,7 @@ async function loadMap(fileKey) {
   try {
     const res = await fetch(`/api/map/${fileKey}/data`);
     state.currentData = await res.json();
+    flipDevicesFromStorage(state.currentData);
   } catch {
     state.currentData = { width: 4000, height: 3000, zones: [], subzones: [], devices: [] };
   }
@@ -283,6 +541,10 @@ async function loadMap(fileKey) {
     renderMapList();
     updatePropsPanel();
     updateToolInfo();
+    if (state.pendingFocus) {
+      focusDevice(state.pendingFocus);
+      state.pendingFocus = null;
+    }
   };
   floorplanImg.onerror = () => {
     toolbar.style.display = "flex";
@@ -296,6 +558,10 @@ async function loadMap(fileKey) {
     renderOverlay();
     statusText.textContent = "No image — upload a floorplan PNG";
     renderMapList();
+    if (state.pendingFocus) {
+      focusDevice(state.pendingFocus);
+      state.pendingFocus = null;
+    }
   };
 }
 
@@ -318,11 +584,17 @@ function applyTransform() {
 async function saveCurrentMap() {
   if (!state.currentMap || !state.currentData) return;
   try {
-    await fetch(`/api/map/${state.currentMap}/data`, {
+    // Serialize back to storage convention (device y-up); in-memory stays image-space.
+    const payload = {
+      ...state.currentData,
+      devices: (state.currentData.devices || []).map(d => ({ ...d, y: flipY(d.y) })),
+    };
+    const res = await fetch(`/api/map/${state.currentMap}/data`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(state.currentData),
+      body: JSON.stringify(payload),
     });
+    adoptRevision(await res.json());
     state.dirty = false;
   } catch (err) {
     toast("Save failed: " + err.message);
@@ -511,14 +783,26 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-// MapView stores zone polygons y-up (origin bottom-left), while the SVG overlay,
-// the floorplan PNG, and device x/y are y-down (origin top-left). Flip y across
-// the map height so zones align with the plan. The flip is its own inverse, so
-// applying it on both read (parse) and write (serialize) round-trips exactly.
+// MapView stores BOTH zone polygons AND device y y-up (origin bottom-left),
+// while the SVG overlay and the floorplan PNG are y-down (origin top-left).
+// Flip y across the map height so both align with the plan. The flip is its
+// own inverse, so applying it on read and write round-trips exactly.
+// (Device y was misread as y-down until v1.2.0 — dots rendered mirrored, which
+// went unnoticed while they were anonymous; database labels exposed it.)
 // If height is unknown (no map loaded), pass coords through unchanged.
 function flipY(y) {
   const h = state.currentData && state.currentData.height;
   return h ? h - y : y;
+}
+
+// Convert freshly-fetched map JSON (storage convention) to in-memory
+// image-space device coords. Everything after load — render, drag, props,
+// search focus — then works in one coordinate system; saveCurrentMap flips
+// back on serialize.
+function flipDevicesFromStorage(data) {
+  const h = data && data.height;
+  if (!h) return;
+  for (const d of data.devices || []) d.y = h - d.y;
 }
 
 function parsePolygon(wkt) {
@@ -764,6 +1048,9 @@ function showAddDeviceModal(x, y) {
     const dy = parseInt(overlay.querySelector("#newDeviceY").value);
     if (!id) { toast("Device ID required"); return; }
     state.currentData.devices = state.currentData.devices || [];
+    if (state.currentData.devices.some(d => d.id === id)) {
+      if (!confirm(`Device ${id} is already on this map. Add it again anyway?`)) return;
+    }
     state.currentData.devices.push({ id, x: dx, y: dy });
     state.dirty = true;
     state.selection = { type: "device", index: state.currentData.devices.length - 1 };
@@ -813,6 +1100,7 @@ btnAddMap.addEventListener("click", () => {
       const data = await res.json();
       if (data.ok) {
         state.mapinfo = data.mapinfo;
+        adoptRevision(data);
         renderMapList();
         loadMap(data.file);
         toast("Map created: " + name);
@@ -833,6 +1121,7 @@ async function deleteMap(fileKey, name) {
     const data = await res.json();
     if (data.ok) {
       state.mapinfo = data.mapinfo;
+      adoptRevision(data);
       if (state.currentMap === fileKey) {
         state.currentMap = null;
         state.currentData = null;
@@ -877,11 +1166,12 @@ function renameMap(fileKey) {
     entry.group = overlay.querySelector("#renameGroup").value.trim();
     entry.name = overlay.querySelector("#renameName").value.trim();
     try {
-      await fetch("/api/mapinfo", {
+      const res = await fetch("/api/mapinfo", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maps: state.mapinfo.maps }),
       });
+      adoptRevision(await res.json());
       renderMapList();
       toast("Renamed");
     } catch (err) {
@@ -904,6 +1194,7 @@ imageInput.addEventListener("change", async () => {
     const res = await fetch(`/api/map/${state.currentMap}/image`, { method: "POST", body: fd });
     const data = await res.json();
     if (data.ok) {
+      adoptRevision(data);
       const newSrc = `/api/map/${state.currentMap}/image?t=${Date.now()}`;
       floorplanImg.src = newSrc;
       floorplanImg.onload = () => {
@@ -967,6 +1258,9 @@ function updatePropsPanel() {
       dev.x = parseInt(propsPanel.querySelector("#propDevX").value) || 0;
       dev.y = parseInt(propsPanel.querySelector("#propDevY").value) || 0;
       state.dirty = true;
+      if (state.currentData.devices.filter(d => d.id === dev.id).length > 1) {
+        toast(`Note: ${dev.id} now appears more than once on this map`);
+      }
       renderOverlay();
     };
     propsPanel.querySelector("#propDevId").addEventListener("change", updateDev);
@@ -1048,6 +1342,14 @@ btnExport.addEventListener("click", async () => {
 // ─── Keyboard shortcuts ───
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "f" && (e.ctrlKey || e.metaKey)) {
+    if (searchWrap.style.display !== "none") {
+      e.preventDefault();
+      searchBox.focus();
+      searchBox.select();
+    }
+    return;
+  }
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
 
   if (e.key === "Escape") {
@@ -1118,6 +1420,21 @@ async function loadVersionBadge() {
 }
 
 // ─── Init ───
+
+// Restore a live session on page load: the server keeps its state across
+// browser refreshes (and the MCP server may have loaded maps already), so if
+// maps exist, skip the welcome screen instead of demanding a re-upload.
+async function rehydrateMaps() {
+  try {
+    const mi = await (await fetch("/api/mapinfo")).json();
+    if (mi.maps && mi.maps.length) {
+      state.mapinfo = mi;
+      showEditor();
+    }
+  } catch { /* fresh server, nothing to restore */ }
+}
+
 updateToolInfo();
 loadVersionBadge();
+rehydrateMaps();
 rehydrateLabels();

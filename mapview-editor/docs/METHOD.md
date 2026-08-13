@@ -42,15 +42,21 @@ appending a `mapinfo` entry with the next free number and creating the matching
 
 ### ⚠ The coordinate-system trap
 
-Device x/y and the PNG share a **y-down** coordinate space (origin top-left,
-standard image coordinates). Zone polygon WKT, however, is stored **y-up**
-(origin bottom-left, standard geometry convention). Render both as-is and every
-zone appears vertically mirrored against its floorplan.
+**Both device x/y and zone polygon WKT are stored y-up** (origin bottom-left,
+standard geometry convention). Only the floorplan PNG is y-down (origin
+top-left, standard image coordinates). Render either as-is against the image
+and it appears vertically mirrored on its floorplan.
 
-The fix: flip zone y across the map height (`y' = height − y`) when reading,
-and flip back when writing. The flip is its own inverse, so a round-trip is
-lossless. If you build your own tooling against `.mvdb` files, this is the
-mistake you'll make first.
+The fix: flip y across the map height (`y' = height − y`) when reading, and
+flip back when writing — for zones AND devices. The flip is its own inverse,
+so a round-trip is lossless. If you build your own tooling against `.mvdb`
+files, this is the mistake you'll make first.
+
+We made it ourselves: this editor misread device y as y-down through v1.1.0,
+rendering every device dot vertically mirrored. Nobody could tell while the
+dots were anonymous — the database-labels feature put names on them and
+exposed it within hours. Verified against SensorView-built maps by checking
+that devices land inside their zone polygons only under the y-up reading.
 
 ### Joining the map to the database (read-only labels)
 

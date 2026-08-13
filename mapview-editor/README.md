@@ -14,8 +14,9 @@ Load an exported `.mvdb`, edit floorplans, devices, and zones in the browser, th
 - **Automatic image optimization on export** — floorplan PNGs are losslessly re-encoded to indexed color where possible, typically ~55-60% smaller with no visual change (see [FLOORPLAN_STANDARD.md](docs/FLOORPLAN_STANDARD.md))
 - **Properties panel** — edit device IDs, positions, zone IDs, parent devices, ports
 - **Database labels (read-only)** — optionally load a SensorView database backup (`.svdb` or a bare `sensor.mdb`) to show plain-language device and zone names instead of raw hex IDs: next to markers (toggleable), in tooltips, on zones, and in the properties panel. Dots are also color-coded by device model (with an on-map legend). The database is never modified and the exported `.mvdb` is unchanged
+- **Device search** — `Ctrl+F` searches IDs and database names across all maps; results jump to and highlight the device. An empty search offers a same-map duplicate-ID check
 - **Pan & zoom** — scroll to zoom, drag to pan, `F` to fit
-- **Keyboard shortcuts** — `1`–`5` for tools, `Del` to delete, `Ctrl+S` to save
+- **Keyboard shortcuts** — `1`–`5` for tools, `Del` to delete, `Ctrl+S` to save, `Ctrl+F` to search
 
 ## Requirements
 
@@ -60,6 +61,31 @@ Open http://localhost:5111 and drop a `.mvdb` file onto the page.
 | `Del` / `Backspace` | Delete selected item |
 | `Esc` | Deselect |
 | `Ctrl+S` | Save current map |
+| `Ctrl+F` | Search devices across all maps |
+
+## MCP integration (let Claude build drawings)
+
+`mcp_server.py` is a [Model Context Protocol](https://modelcontextprotocol.io) server that
+gives an AI assistant editing tools: list/read maps, add/move/remove device markers, draw
+and delete zones, search devices across maps, load files, and export. It drives the running
+editor server, and the browser UI live-syncs — you watch the drawing build in real time.
+If you have unsaved manual edits, the sync warns instead of overwriting them.
+
+```bash
+py -m pip install mcp
+```
+
+Start the editor (`py server.py`), then register the MCP server with Claude Code:
+
+```bash
+claude mcp add mapview -- py mcp_server.py
+```
+
+(For Claude Desktop, add the same command under `mcpServers` in its config.)
+
+All MCP tools speak image coordinates — x right, y down, matching the floorplan PNG —
+and the server handles the zone y-flip internally. Placing a marker positions an existing
+SensorView device; it never creates devices in SensorView itself.
 
 ## .mvdb format
 

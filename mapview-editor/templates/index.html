@@ -414,6 +414,62 @@ body {
   flex-shrink: 0;
 }
 
+/* Device search */
+.search-wrap { position: relative; }
+.search-wrap input {
+  width: 220px;
+  padding: 5px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 12px;
+}
+.search-wrap input:focus { outline: none; border-color: var(--accent2); }
+.search-results {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  width: 340px;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  z-index: 600;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+}
+.search-results .search-row {
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.search-results .search-row:hover { background: var(--bg3); }
+.search-results .search-row .sr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-results .search-row .sr-id { font-family: monospace; color: var(--accent2); }
+.search-results .search-row .sr-map { color: var(--fg2); font-size: 11px; white-space: nowrap; }
+.search-results .search-row .sr-dup { color: var(--danger); font-size: 11px; white-space: nowrap; }
+.search-results .search-note {
+  padding: 7px 10px;
+  font-size: 11px;
+  color: var(--fg2);
+}
+@keyframes pulse-ring {
+  from { r: 14; opacity: 1; }
+  to { r: 60; opacity: 0; }
+}
+.canvas-inner svg .pulse-ring {
+  fill: none;
+  stroke: var(--device-selected);
+  stroke-width: 4;
+  pointer-events: none;
+  animation: pulse-ring 1.2s ease-out 3;
+}
+
 /* Tooltip */
 .device-tooltip {
   position: fixed;
@@ -437,6 +493,10 @@ body {
   <span id="versionBadge" title="" style="font-size:11px;color:var(--fg2);font-family:monospace;cursor:default"></span>
   <span class="spacer"></span>
   <span id="statusText" style="font-size:12px;color:var(--fg2)"></span>
+  <span class="search-wrap" id="searchWrap" style="display:none">
+    <input type="text" id="searchBox" placeholder="Search devices (Ctrl+F)" autocomplete="off">
+    <div class="search-results" id="searchResults" style="display:none"></div>
+  </span>
   <span class="labels-badge" id="labelsBadge" style="display:none">
     <span id="labelsBadgeText"></span>
     <button class="labels-clear" id="btnClearLabels" title="Clear database labels">×</button>

@@ -1,6 +1,6 @@
 """MapView Editor — local Flask server for editing .mvdb floorplan archives."""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import io
 import json
@@ -36,7 +36,18 @@ MAP_INFO = {"version": 1, "maps": []}
 LABELS = None
 LABELS_SOURCE = None
 LABELS_DIR = None
+# Bumped on every mutation. The browser polls it and reloads when something
+# else (the MCP server, curl, another tab) changes the maps, so external edits
+# appear live. Mutating responses include the new value so the browser can
+# tell its own writes apart from external ones.
+REVISION = 0
 REPO_DIR = Path(__file__).resolve().parent
+
+
+def _bump_revision():
+    global REVISION
+    REVISION += 1
+    return REVISION
 
 
 def get_work_dir():
@@ -116,7 +127,12 @@ def upload_mvdb():
         else:
             MAP_DATA[fkey] = {"width": 4000, "height": 3000, "zones": [], "subzones": [], "devices": []}
 
-    return jsonify(ok=True, mapinfo=MAP_INFO)
+    return jsonify(ok=True, mapinfo=MAP_INFO, revision=_bump_revision())
+
+
+@app.route("/api/revision")
+def get_revision():
+    return jsonify(revision=REVISION, labelsSource=LABELS_SOURCE)
 
 
 def _label_stats():
@@ -161,7 +177,8 @@ def upload_labels():
     if LABELS_DIR:
         shutil.rmtree(LABELS_DIR, ignore_errors=True)
     LABELS_DIR, LABELS, LABELS_SOURCE = new_dir, labels, Path(f.filename).name
-    return jsonify(ok=True, source=LABELS_SOURCE, stats=_label_stats(), **labels)
+    return jsonify(ok=True, source=LABELS_SOURCE, stats=_label_stats(),
+                   revision=_bump_revision(), **labels)
 
 
 @app.route("/api/labels")
@@ -177,7 +194,19 @@ def clear_labels():
     if LABELS_DIR:
         shutil.rmtree(LABELS_DIR, ignore_errors=True)
     LABELS = LABELS_SOURCE = LABELS_DIR = None
-    return jsonify(ok=True)
+    return jsonify(ok=True, revision=_bump_revision())
+
+
+@app.route("/api/index")
+def device_index():
+    """Compact index of every device marker across all maps, for search."""
+    out = []
+    for entry in MAP_INFO.get("maps", []):
+        fkey = entry["file"]
+        for d in MAP_DATA.get(fkey, {}).get("devices", []):
+            out.append({"id": d.get("id"), "map": fkey,
+                        "x": d.get("x"), "y": d.get("y")})
+    return jsonify(devices=out)
 
 
 @app.route("/api/mapinfo")
@@ -193,7 +222,7 @@ def update_mapinfo():
     if data and "maps" in data:
         MAP_INFO["maps"] = data["maps"]
         _save_mapinfo()
-    return jsonify(ok=True, mapinfo=MAP_INFO)
+    return jsonify(ok=True, mapinfo=MAP_INFO, revision=_bump_revision())
 
 
 @app.route("/api/map/<file_key>/image")
@@ -228,7 +257,7 @@ def upload_map_image(file_key):
         MAP_DATA[file_key]["height"] = h
         _save_map_json(file_key)
 
-    return jsonify(ok=True, width=w, height=h)
+    return jsonify(ok=True, width=w, height=h, revision=_bump_revision())
 
 
 @app.route("/api/map/<file_key>/data")
@@ -252,7 +281,7 @@ def update_map_data(file_key):
         return jsonify(error="No data"), 400
     MAP_DATA[file_key] = data
     _save_map_json(file_key)
-    return jsonify(ok=True)
+    return jsonify(ok=True, revision=_bump_revision())
 
 
 @app.route("/api/map/create", methods=["POST"])
@@ -287,7 +316,7 @@ def create_map():
         "devices": [],
     }
     _save_map_json(file_key)
-    return jsonify(ok=True, file=file_key, mapinfo=MAP_INFO)
+    return jsonify(ok=True, file=file_key, mapinfo=MAP_INFO, revision=_bump_revision())
 
 
 @app.route("/api/map/<file_key>", methods=["DELETE"])
@@ -304,7 +333,7 @@ def delete_map(file_key):
         if p.exists():
             p.unlink()
 
-    return jsonify(ok=True, mapinfo=MAP_INFO)
+    return jsonify(ok=True, mapinfo=MAP_INFO, revision=_bump_revision())
 
 
 def _optimize_png(fpath):
