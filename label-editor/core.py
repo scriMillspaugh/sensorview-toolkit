@@ -13,7 +13,7 @@ This module has no web dependencies so it can be unit-tested and packaged.
 """
 from __future__ import annotations
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 import os
 import re
@@ -41,10 +41,20 @@ MAX_LABEL_BY_KIND = {"device": MAX_DEVICE_LABEL, "zone": MAX_ZONE_LABEL}
 # character rules do not apply, but the same silent truncation does.
 MAX_COMMENT = 200
 
-# One regex covers every BACnet character restriction: ASCII letters/digits plus
-# the two accepted delimiters, and a mandatory letter first. It rejects spaces,
-# %&#$@?, slashes, math operators, and non-ASCII glyphs by construction.
-LABEL_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
+# One regex covers every character restriction: ASCII letters/digits plus the
+# underscore, and a mandatory letter first. It rejects spaces, %&#$@?, slashes,
+# math operators, and non-ASCII glyphs by construction. BACnet itself would accept
+# a hyphen, but Acuity's nLight BMS integration rules allow the underscore only,
+# so the hyphen is refused too (1.3.0; it was an advisory in 1.1.0-1.2.0).
+LABEL_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+
+# What Excel does to an ID column it decides is a number. Both are caught before
+# any write, because an UPDATE against a mangled ID matches nothing and fails
+# silently. See LABELING.md, "Editing the CSV in Excel".
+#   - a hex ID such as 381E0024 is read as 381 x 10^24 and saved as "3.81E+26";
+#     the digits are gone and cannot be recovered from the CSV.
+#   - an all-digit ID such as 02319041 loses its leading zero -> "2319041".
+EXCEL_SCI_RE = re.compile(r"\d+(\.\d+)?E\+\d+", re.IGNORECASE)
 
 # Advisory only — never blocking. See advisories() and LABELING.md.
 VALID_FLOORS = {f"{n:02d}" for n in range(1, 13)} | {"P1", "PH"}
@@ -131,10 +141,16 @@ def validate(dev_map: dict, zone_map: dict,
         labels = [v.strip() for v in mapping.values() if v and v.strip()]
         for lbl in labels:
             if not LABEL_RE.fullmatch(lbl):
-                problems.append(
-                    f"{kind}: '{lbl}' — must start with a letter and use only "
-                    f"letters, digits, underscores, or hyphens (no spaces, symbols, or accents)"
-                )
+                if "-" in lbl and LABEL_RE.fullmatch(lbl.replace("-", "_")):
+                    problems.append(
+                        f"{kind}: '{lbl}' — hyphens are not allowed in nLight labels; "
+                        f"use an underscore ('{lbl.replace('-', '_')}')"
+                    )
+                else:
+                    problems.append(
+                        f"{kind}: '{lbl}' — must start with a letter and use only "
+                        f"letters, digits, and underscores (no hyphens, spaces, symbols, or accents)"
+                    )
             if len(lbl) > limit:
                 problems.append(
                     f"{kind}: '{lbl}' — {len(lbl)} chars, over the {limit}-char "
@@ -176,14 +192,6 @@ def advisories(dev_map: dict, zone_map: dict) -> list[str]:
             if not lbl or lbl in seen:  # one note per distinct label, not per row
                 continue
             seen.add(lbl)
-            # BACnet permits hyphens; Acuity documentation calls for underscores.
-            # Allowed either way, flagged so the ambiguity stays visible.
-            if "-" in lbl:
-                notes.append(
-                    f"{kind}: '{lbl}' — uses a hyphen. Valid BACnet, but Acuity "
-                    f"documents the underscore as the nLight separator; underscores "
-                    f"are the safer choice."
-                )
             # Catches the room-number mis-parse in METHOD.md: a bare '816_PP'
             # reading as floor 81. Only meaningful under the recommended format.
             parts = lbl.split("_")
@@ -201,6 +209,44 @@ def advisories(dev_map: dict, zone_map: dict) -> list[str]:
     return notes
 
 
+def check_ids(tables: dict, dev_map: dict, zone_map: dict,
+              dev_notes: dict | None = None, zone_notes: dict | None = None) -> tuple[list[str], list[str]]:
+    """Match the rename list's IDs against the backup. Returns (problems, unmatched).
+
+    problems — IDs that look like Excel damaged them (see EXCEL_SCI_RE). These
+    block the write: the list is untrustworthy as a whole, and a sci-notation ID
+    cannot be repaired. Re-export the template, or re-open the CSV with the ID
+    column set to Text.
+    unmatched — IDs that are simply not in this backup (a device removed since the
+    list was made, or a list from another site). Reported, not written."""
+    problems, unmatched = [], []
+    for kind, rows, ids in (("device", tables["devices"], set((dev_map or {}).keys()) | set((dev_notes or {}).keys())),
+                            ("zone", tables["zones"], set((zone_map or {}).keys()) | set((zone_notes or {}).keys()))):
+        known = {r["id"] for r in rows}
+        by_stripped = {}
+        for k in known:
+            by_stripped.setdefault(k.lstrip("0") or "0", []).append(k)
+        for rid in sorted(ids):
+            rid = str(rid).strip()
+            if rid in known:
+                continue
+            if EXCEL_SCI_RE.fullmatch(rid):
+                problems.append(
+                    f"{kind} ID '{rid}' — Excel turned this ID into a number in scientific "
+                    f"notation; the original digits are lost. Re-download the template, or "
+                    f"open the CSV with the ID column set to Text."
+                )
+            elif rid.isdigit() and any(k != rid for k in by_stripped.get(rid, [])):
+                full = next(k for k in by_stripped[rid] if k != rid)
+                problems.append(
+                    f"{kind} ID '{rid}' — looks like '{full}' with its leading zeros "
+                    f"removed by Excel. Open the CSV with the ID column set to Text."
+                )
+            else:
+                unmatched.append(f"{kind} ID '{rid}' — not in this backup; skipped")
+    return problems, unmatched
+
+
 def apply_labels(mdb_path: str, dev_map: dict, zone_map: dict,
                  dev_notes: dict | None = None, zone_notes: dict | None = None) -> tuple[int, int]:
     """Write new labels and notes into the mdb. Blank/absent values are left
@@ -213,7 +259,9 @@ def apply_labels(mdb_path: str, dev_map: dict, zone_map: dict,
     cur = conn.cursor()
 
     def rows_hit():
-        return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 1
+        # -1 means the driver did not report a count; 0 means the ID matched
+        # nothing and must not be reported as a change.
+        return cur.rowcount if cur.rowcount >= 0 else 1
 
     dcount = 0
     for did in dev_map.keys() | dev_notes.keys():
@@ -279,9 +327,21 @@ def relabel(in_path: str, dev_map: dict, zone_map: dict, out_path: str,
         raise ValueError("Validation failed:\n" + "\n".join(problems))
     tmp = tempfile.mkdtemp(prefix="svrelabel_")
     mdb, members = prepare_input(in_path, tmp)
+    tables = read_tables(mdb)
+    id_problems, unmatched = check_ids(tables, dev_map, zone_map, dev_notes, zone_notes)
+    if id_problems:
+        raise ValueError("Rename list IDs look damaged:\n" + "\n".join(id_problems))
+    # Write only IDs the backup actually has; the rest are reported in "unmatched".
+    dev_ids = {r["id"] for r in tables["devices"]}
+    zone_ids = {r["id"] for r in tables["zones"]}
+    dev_map = {k: v for k, v in dev_map.items() if str(k).strip() in dev_ids}
+    zone_map = {k: v for k, v in zone_map.items() if str(k).strip() in zone_ids}
+    dev_notes = {k: v for k, v in (dev_notes or {}).items() if str(k).strip() in dev_ids}
+    zone_notes = {k: v for k, v in (zone_notes or {}).items() if str(k).strip() in zone_ids}
     dchg, zchg = apply_labels(mdb, dev_map, zone_map, dev_notes, zone_notes)
     if members is None:
         shutil.copy2(mdb, out_path)  # bare database: the edited copy IS the output
     else:
         repackage_svdb(tmp, members, out_path)
-    return {"devices_changed": dchg, "zones_changed": zchg, "output": out_path}
+    return {"devices_changed": dchg, "zones_changed": zchg, "output": out_path,
+            "unmatched": unmatched}

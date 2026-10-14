@@ -61,11 +61,16 @@ original.svdb ──7z extract──► sensor.mdb ──ODBC UPDATE──► se
 Labels flow into **BACnet object names** on nLight ECLYPSE (nECY) controllers.
 Two independent sets of limits apply — see `LABELING.md` for the full writeup.
 
-**Character rules, from BACnet:** letters/digits plus `_` or `-`, starting with a
-letter. No spaces, symbols (`%&#$@?`), slashes, math operators, or non-ASCII. (`$`
-is a common habit from electrical drawings; it must go.) Hyphens are legal BACnet
-but Acuity documents the underscore as the nLight separator, so the tool accepts a
-hyphen and emits an advisory.
+**Character rules, from BACnet and Acuity:** letters/digits plus `_`, starting with
+a letter. No hyphens, spaces, symbols (`%&#$@?`), slashes, math operators, or
+non-ASCII. (`$` and `-` are common habits from electrical drawings; both must go.)
+BACnet alone would accept a hyphen, but Acuity's nLight BMS rules allow the
+underscore only, so the tool refuses one.
+
+**IDs must match the backup.** An `UPDATE ... WHERE DeviceID = ?` against an ID
+that isn't there changes nothing and raises no error. The tools check every ID
+first. Excel is the usual cause of a bad ID — it rewrites hex IDs as scientific
+notation and strips leading zeros on open; see `LABELING.md`.
 
 **Length, from the SensorView schema — not from BACnet:**
 
