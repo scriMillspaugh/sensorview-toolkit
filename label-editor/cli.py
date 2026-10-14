@@ -33,7 +33,9 @@ def load_map(path, id_col, label_col):
     """Read a rename CSV. Returns (labels, notes) — notes come from an optional
     'Notes' (or 'UserComments') column and are absent if it isn't present."""
     labels, notes = {}, {}
-    with open(path, newline="") as f:
+    # utf-8-sig: Excel's "CSV UTF-8" save prefixes a byte-order mark, which would
+    # otherwise glue itself to the first header and hide the ID column.
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         if id_col not in reader.fieldnames or label_col not in reader.fieldnames:
             sys.exit(f"{path}: needs columns '{id_col}' and '{label_col}'")
@@ -92,6 +94,21 @@ def main():
     print(f"  {dmatch}/{len(dev_map)} device labels match a device in the backup.")
     print(f"  {zmatch}/{len(zone_map)} zone labels match a zone in the backup.")
 
+    id_problems, unmatched = core.check_ids(tables, dev_map, zone_map, dev_notes, zone_notes)
+    if id_problems:
+        print(f"\nDAMAGED IDs ({len(id_problems)}) — usually Excel; nothing will be written:")
+        for p in id_problems[:25]:
+            print("  -", p)
+        if len(id_problems) > 25:
+            print(f"  … and {len(id_problems) - 25} more")
+        sys.exit(1)
+    if unmatched:
+        print(f"\nNOT IN THIS BACKUP ({len(unmatched)}) — skipped, not written:")
+        for u in unmatched[:25]:
+            print("  -", u)
+        if len(unmatched) > 25:
+            print(f"  … and {len(unmatched) - 25} more")
+
     # Drop notes that already match the backup, so re-running an unedited export
     # doesn't report writes it isn't really making.
     for cur_map, incoming in ((tables["devices"], dev_notes), (tables["zones"], zone_notes)):
@@ -111,6 +128,8 @@ def main():
     summary = core.relabel(args.svdb, dev_map, zone_map, out_path, dev_notes, zone_notes)
     print(f"\nWrote {out_path}")
     print(f"Updated {summary['devices_changed']} devices + {summary['zones_changed']} zones.")
+    if summary["unmatched"]:
+        print(f"Skipped {len(summary['unmatched'])} ID(s) not in the backup.")
     print("Import it in SensorView (Import -> Synchronize if needed -> do NOT Clear).")
 
 

@@ -115,6 +115,7 @@ def api_apply():
         "filename": f"{stem}_relabeled{ext}",
         "devices_changed": summary["devices_changed"],
         "zones_changed": summary["zones_changed"],
+        "unmatched": len(summary["unmatched"]),
     })
 
 
@@ -259,7 +260,9 @@ function csvq(s){s=s||"";return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
 
 $("csv").onchange=async e=>{
   const f=e.target.files[0]; if(!f)return;
-  const text=await f.text(); const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  e.target.value="";  // let the same file be picked again after fixing it
+  // Strip the byte-order mark Excel's "CSV UTF-8" save adds, or the ID header won't match.
+  const text=(await f.text()).replace(/^﻿/,""); const lines=text.split(/\r?\n/).filter(l=>l.trim());
   if(!lines.length)return;
   const head=parseCsvLine(lines[0]).map(h=>h.trim());
   const iId=head.findIndex(h=>/^(DeviceID|ZoneID)$/i.test(h));
@@ -267,16 +270,28 @@ $("csv").onchange=async e=>{
   const iNote=head.findIndex(h=>/^(Notes|UserComments)$/i.test(h));  // optional
   if(iId<0||iNew<0){alert("CSV needs an ID column (DeviceID/ZoneID) and a ProposedLabel/ProposedName column.");return;}
   const which=/ZoneID/i.test(head[iId])?"zones":"devices"; const store=S.labels[which], notes=S.notes[which];
-  const byId={}; (which==="zones"?S.zones:S.devices).forEach(x=>byId[x.id]=x);
+  const byId={}, byStripped={}; (which==="zones"?S.zones:S.devices).forEach(x=>{byId[x.id]=x;byStripped[x.id.replace(/^0+(?=.)/,"")]=x.id;});
+  // Excel damage check, before anything is loaded (same rules as core.check_ids):
+  // "3.81E+26" is a hex ID read as a number; "2319041" is "02319041" minus its zero.
+  const damaged=[]; let unknown=0;
+  for(let i=1;i<lines.length;i++){const id=(parseCsvLine(lines[i])[iId]||"").trim(); if(!id||byId[id])continue;
+    if(/^\d+(\.\d+)?E\+\d+$/i.test(id))damaged.push(`${id} (scientific notation — digits lost)`);
+    else if(/^\d+$/.test(id)&&byStripped[id]&&byStripped[id]!==id)damaged.push(`${id} (should be ${byStripped[id]})`);
+    else unknown++;}
+  if(damaged.length){alert(`This CSV has ${damaged.length} ID(s) damaged by Excel — nothing was loaded.\n\n`+
+    damaged.slice(0,8).join("\n")+(damaged.length>8?`\n… and ${damaged.length-8} more`:"")+
+    `\n\nRe-download the template, or open the CSV in Excel via Data → From Text/CSV with the ID column set to Text. See the labeling practices page.`);return;}
   let n=0,m=0;
   for(let i=1;i<lines.length;i++){const c=parseCsvLine(lines[i]);const id=(c[iId]||"").trim();const nl=(c[iNew]||"").trim();
+    if(!byId[id])continue;  // not in this backup — counted in `unknown`, never queued
     if(id&&nl){store[id]=nl;n++;}
     if(id&&iNote>=0){const nt=(c[iNote]||"").trim();
       // Only a CHANGED note counts — re-uploading an unedited template must not
       // queue thousands of no-op writes.
       if(nt&&nt!==((byId[id]||{}).notes||"")){notes[id]=nt;m++;}}}
   S.tab=which; document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===which));
-  renderTable(); $("status").textContent=`Loaded ${n} new ${which} labels`+(iNote>=0?` and ${m} changed note(s)`:"")+" from CSV.";
+  renderTable(); $("status").textContent=`Loaded ${n} new ${which} labels`+(iNote>=0?` and ${m} changed note(s)`:"")+" from CSV."
+    +(unknown?` Skipped ${unknown} row(s) whose ID is not in this backup.`:"");
 };
 function parseCsvLine(line){const out=[];let cur="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];
   if(q){if(ch=='"'){if(line[i+1]=='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
@@ -309,7 +324,8 @@ $("applyBtn").onclick=async()=>{
   const d=await r.json(); $("applyBtn").disabled=false;
   if(!r.ok){$("status").style.color="var(--bad)";$("status").textContent="✗ "+d.error;$("problems").textContent=d.error;return;}
   $("status").style.color="var(--ok)";
-  $("status").textContent=`✓ Rebuilt: ${d.devices_changed} devices, ${d.zones_changed} zones updated.`;
+  $("status").textContent=`✓ Rebuilt: ${d.devices_changed} devices, ${d.zones_changed} zones updated.`
+    +(d.unmatched?` ${d.unmatched} ID(s) not in the backup were skipped.`:"");
   $("dlWrap").innerHTML=`<a class="dl" href="/api/download/${d.download}">⬇ Download ${esc(d.filename)}</a>`;
 };
 </script>

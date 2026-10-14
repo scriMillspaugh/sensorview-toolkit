@@ -12,10 +12,14 @@ A label that breaks any of these is refused. The write never happens.
 
 ### Character rules
 
-Labels become BACnet `Object_Name` values, so they follow BACnet's restrictions:
+Labels become BACnet `Object_Name` values through the nLight ECLYPSE controller,
+so they follow BACnet's restrictions plus Acuity's tighter nLight rules:
 
 - **Start with a letter.** Never a digit.
-- **Letters, digits, underscores, and hyphens only** — `A–Z`, `a–z`, `0–9`, `_`, `-`.
+- **Letters, digits, and underscores only** — `A–Z`, `a–z`, `0–9`, `_`.
+- **No hyphens.** BACnet on its own would accept `-`, but Acuity's nLight BMS
+  integration rules allow the underscore only. (`-` is a common habit from
+  electrical drawings, like `$`; both have to go.)
 - **No spaces.** They break automated network scripts.
 - **No symbols** — `%`, `&`, `#`, `$`, `@`, `?` and friends. (`$` is a common habit
   carried over from electrical drawings; it has to go.)
@@ -59,6 +63,44 @@ the write is the only protection.
 
 **No duplicate labels.** Devices and zones are checked separately, so a device and
 a zone may share a name. Duplicates within either group collide as BACnet points.
+
+### IDs in the rename list
+
+**Every ID must be one the backup actually has.** An `UPDATE` against an ID that
+matches nothing fails silently, so the IDs are checked before anything is written:
+
+- **An ID that looks damaged by Excel blocks the whole run** — see the next section.
+- **An ID that is simply not in this backup** (a device removed since the list was
+  made) is skipped and listed. It is never counted as a change.
+
+### Editing the CSV in Excel
+
+Excel decides for itself which columns are numbers, and it gets nLight device IDs
+wrong in two ways — **silently, on open, before you edit anything**:
+
+| Original ID | What Excel saves | Recoverable? |
+|---|---|---|
+| `381E0024` (hex that looks like a number) | `3.81E+26` | **No** — the digits are gone |
+| `02319041` (all digits) | `2319041` | Only by guessing the zeros back |
+
+Opening the template in Excel and saving it is enough to do this. On a 4,336-device
+site it damaged 329 IDs — 63 in scientific notation, 266 missing leading zeros — and
+the damaged rows looked like new devices.
+
+The tools refuse a CSV with damaged IDs and say which ones. To edit the list in Excel
+without the damage:
+
+1. Open a blank workbook. Do **not** double-click the CSV.
+2. **Data → From Text/CSV** → pick the file → **Transform Data**.
+3. Select the `DeviceID` column → **Data Type → Text** → **Replace current**.
+4. **Close & Load**, edit, then **Save As → CSV UTF-8**.
+
+Or skip Excel: any text editor, or the table in the web tool, leaves the IDs alone.
+If a CSV is already damaged, download a fresh template — a damaged ID cannot be
+repaired from the file itself.
+
+Excel's **CSV UTF-8** format starts the file with an invisible byte-order mark. Both
+tools read it correctly.
 
 ---
 
@@ -143,9 +185,11 @@ Infrastructure:
 
 ### Underscore or hyphen?
 
-Both pass validation. **Underscores are recommended** — Acuity's nLight
-documentation specifies the underscore as the separator, while BACnet itself
-accepts either. Using a hyphen produces an advisory note, not an error.
+**Underscore.** Since 1.3.0 a hyphen is refused, not just flagged — see Part 1.
+Versions 1.1.0–1.2.0 accepted hyphens with an advisory note, because BACnet allows
+them; Acuity's nLight rules do not, and the stricter rule is the one that decides
+whether the BMS can read the point. Labels already in your system are not affected
+until you rename them.
 
 ### A parsing trap worth knowing
 
