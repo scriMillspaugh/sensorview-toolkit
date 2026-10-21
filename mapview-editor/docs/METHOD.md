@@ -128,6 +128,36 @@ Keep the original export until the import is verified. Device markers only
 display devices that exist in SensorView's database — placing a marker doesn't
 create a device, it just positions one.
 
+### What SensorView's importer requires (learned the hard way, 2026-10-21)
+
+SensorView extracts the `.mvdb` into `…\SensorView\App\<version>\WebUI\Maps\`
+and then reads each map named in `mapinfo`. Its reader is not a general 7-zip
+client: it wants the shape of SensorView's own export, and a file that is a
+valid 7z archive by every other measure can still hang MapView (never finishes
+loading, device navigation dead until a backup is restored) or fail with
+`Could not find file …\WebUI\Maps\mapNNNN.json`. Measured against a real export:
+
+| Property | SensorView export | What broke it |
+|---|---|---|
+| Entry attributes | `32` (Windows ARCHIVE), nothing else | py7zr ≥ 1.1 writes `0x8180 8020` — Unix-extension bit + mode in the high word — on every entry, even on Windows |
+| Entry timestamps | last-write time only | py7zr adds creation and access times |
+| Compression | LZMA2, solid, one block | py7zr's default chain adds a BCJ filter |
+| Member order | by name: `map0009.json`, `map0009.png`, …, `mapinfo` | `mapinfo` order |
+| `mapinfo` entry keys | `file`, `type`, `group`, `name` | any other order (harmless, matched anyway) |
+| Device `x`/`y` | integers | decimals from dragging or scripted placement |
+| PNG per map | every map in `mapinfo` has one | a map whose PNG was missing from the working folder exported without it |
+
+`ExportArchive` in `server.py` is a `py7zr.SevenZipFile` subclass that
+produces the first three; the export route stages members in name order,
+rounds device coordinates, and refuses to export while any map has no image.
+Byte-identical entries are not required (compressed sizes and timestamps
+differ freely) — the entry *properties* are what the reader is picky about.
+
+The MapView drop-down lists maps in `mapinfo` order, grouped by `group` in the
+order each group first appears. Reordering the navigation tree is therefore
+just reordering `mapinfo` — the editor's sidebar drag-and-drop and **Sort**
+button, and the `reorder_maps` / `sort_maps` MCP tools, do exactly that.
+
 ## 5. What the editor automates
 
 `server.py` wraps the pipeline (extract, JSON persistence, safe repack, PNG

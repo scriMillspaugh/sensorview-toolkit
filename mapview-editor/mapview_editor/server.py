@@ -1,10 +1,11 @@
 """MapView Editor — local Flask server for editing .mvdb floorplan archives."""
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,40 @@ from threading import Timer
 
 import py7zr
 from flask import Flask, jsonify, request, send_file, send_from_directory
+
+
+class ExportArchive(py7zr.SevenZipFile):
+    """A 7z writer that produces the entry shape SensorView's importer expects.
+
+    SensorView's own MapView export stores every member with Windows attributes
+    = 32 (FILE_ATTRIBUTE_ARCHIVE) and a last-write time only, LZMA2 with no BCJ
+    filter, members in name order. py7zr >= 1.1 adds Unix-extension attribute
+    bits (0x8000 | mode << 16) and creation/access times to every entry — and
+    SensorView 15.14 either hangs on such a file or fails its import with
+    "Could not find file ...\\WebUI\\Maps\\mapNNNN.json" (seen 2026-10-21).
+    Keeping the entries plain is what makes the export importable.
+    """
+
+    EXPORT_FILTERS = [{"id": py7zr.FILTER_LZMA2, "preset": 7}]
+
+    def __init__(self, file, mode="w", **kwargs):
+        kwargs.setdefault("filters", self.EXPORT_FILTERS)
+        super().__init__(file, mode, **kwargs)
+
+    @staticmethod
+    def _plain(info):
+        info["attributes"] = 32
+        info.pop("creationtime", None)
+        info.pop("lastaccesstime", None)
+        return info
+
+    @staticmethod
+    def _make_file_info(target, arcname=None, dereference=False):
+        return ExportArchive._plain(py7zr.SevenZipFile._make_file_info(target, arcname, dereference))
+
+    @staticmethod
+    def _make_file_info_from_name(bio, size, arcname):
+        return ExportArchive._plain(py7zr.SevenZipFile._make_file_info_from_name(bio, size, arcname))
 
 try:
     from . import dblabels  # installed package / py -m mapview_editor
@@ -130,7 +165,61 @@ def upload_mvdb():
         else:
             MAP_DATA[fkey] = {"width": 4000, "height": 3000, "zones": [], "subzones": [], "devices": []}
 
-    return jsonify(ok=True, mapinfo=MAP_INFO, revision=_bump_revision())
+    return jsonify(ok=True, mapinfo=_mapinfo_payload(), revision=_bump_revision())
+
+
+def _maps_without_image():
+    """Map keys listed in mapinfo that have no PNG in the working folder.
+    SensorView will not load an archive whose map lacks its image, so the
+    export refuses these and the UI flags them."""
+    work = get_work_dir()
+    return [e["file"] for e in MAP_INFO.get("maps", [])
+            if not (Path(work) / f"{e['file']}.png").exists()]
+
+
+# ─── Map index helpers (drop-down order in SensorView = mapinfo order) ───
+
+_LEVEL_RE = re.compile(r"^LEVEL\s+(P\d+|B\d*|PH|\d{1,2})(?:\s*[-_ ]\s*(.+))?$", re.I)
+
+
+def level_sort_key(name):
+    """Sort key so a building's maps read as a building does: parking levels,
+    basement, floors 1..n, penthouse; anything unrecognised keeps its place
+    after them, alphabetically."""
+    m = _LEVEL_RE.match(str(name).strip())
+    if not m:
+        return (9, 0, str(name).upper())
+    lvl, rest = m.group(1).upper(), (m.group(2) or "").upper()
+    if lvl == "PH":
+        return (3, 0, rest)
+    if lvl.startswith("P"):
+        return (0, int(lvl[1:] or 0), rest)
+    if lvl.startswith("B"):
+        return (1, int(lvl[1:] or 0), rest)
+    return (2, int(lvl), rest)
+
+
+def normalize_map_name(name):
+    """Collapse whitespace and write level names the way SensorView's own maps
+    are named: 'LEVEL 05', 'LEVEL P1', 'LEVEL 01 - LOBBY'."""
+    name = re.sub(r"\s+", " ", str(name)).strip()
+    m = _LEVEL_RE.match(name)
+    if not m:
+        return name
+    lvl, rest = m.group(1).upper(), (m.group(2) or "").strip()
+    if lvl.isdigit():
+        lvl = f"{int(lvl):02d}"
+    return f"LEVEL {lvl}" + (f" - {rest.upper()}" if rest else "")
+
+
+def _ordered_entry(e):
+    """mapinfo entries in the export's key order: file, type, group, name."""
+    out = {"file": e["file"], "type": e.get("type", 1),
+           "group": str(e.get("group", "")).strip(), "name": re.sub(r"\s+", " ", str(e.get("name", ""))).strip()}
+    for k, v in e.items():
+        if k not in out:
+            out[k] = v
+    return out
 
 
 @app.route("/api/revision")
@@ -212,20 +301,66 @@ def device_index():
     return jsonify(devices=out)
 
 
+def _mapinfo_payload():
+    """The map index plus which maps still lack a floorplan image."""
+    return {"version": MAP_INFO.get("version", 1), "maps": MAP_INFO["maps"],
+            "missingImages": _maps_without_image()}
+
+
 @app.route("/api/mapinfo")
 def get_mapinfo():
-    return jsonify(MAP_INFO)
+    return jsonify(_mapinfo_payload())
 
 
 @app.route("/api/mapinfo", methods=["PUT"])
 def update_mapinfo():
-    """Replace the full map index (reorder, rename, delete entries)."""
+    """Replace the full map index (reorder, rename, regroup entries).
+
+    The order of `maps` is the order SensorView shows in its MapView drop-down.
+    Entries are matched by file key; a key that is not currently loaded is
+    rejected so a stale client cannot resurrect a deleted map or invent one."""
     global MAP_INFO
     data = request.get_json()
-    if data and "maps" in data:
-        MAP_INFO["maps"] = data["maps"]
-        _save_mapinfo()
-    return jsonify(ok=True, mapinfo=MAP_INFO, revision=_bump_revision())
+    if not data or "maps" not in data:
+        return jsonify(error="Body must be {maps: [...]}"), 400
+    known = {e["file"] for e in MAP_INFO["maps"]}
+    incoming = [e.get("file") for e in data["maps"]]
+    unknown = [k for k in incoming if k not in known]
+    missing = sorted(known - set(incoming))
+    if unknown or missing or len(set(incoming)) != len(incoming):
+        return jsonify(error="maps must list every loaded map exactly once",
+                       unknown=unknown, missing=missing), 400
+    MAP_INFO["maps"] = [_ordered_entry(e) for e in data["maps"]]
+    _save_mapinfo()
+    return jsonify(ok=True, mapinfo=_mapinfo_payload(), revision=_bump_revision())
+
+
+@app.route("/api/mapinfo/sort", methods=["POST"])
+def sort_mapinfo():
+    """Sort every building group by level (P1, B, 01 … 12, PH); groups keep
+    their current order. With {"normalize": true} map names are also rewritten
+    in the export's style ('Level 12' → 'LEVEL 12', 'Level 01_Lobby' →
+    'LEVEL 01 - LOBBY')."""
+    global MAP_INFO
+    data = request.get_json(silent=True) or {}
+    maps = [_ordered_entry(e) for e in MAP_INFO["maps"]]
+    renamed = []
+    if data.get("normalize"):
+        for e in maps:
+            new = normalize_map_name(e["name"])
+            if new != e["name"]:
+                renamed.append({"file": e["file"], "from": e["name"], "to": new})
+                e["name"] = new
+    groups = []
+    for e in maps:
+        if e["group"] not in groups:
+            groups.append(e["group"])
+    ordered = []
+    for g in groups:
+        ordered += sorted((e for e in maps if e["group"] == g), key=lambda e: level_sort_key(e["name"]))
+    MAP_INFO["maps"] = ordered
+    _save_mapinfo()
+    return jsonify(ok=True, mapinfo=_mapinfo_payload(), renamed=renamed, revision=_bump_revision())
 
 
 @app.route("/api/map/<file_key>/image")
@@ -319,7 +454,7 @@ def create_map():
         "devices": [],
     }
     _save_map_json(file_key)
-    return jsonify(ok=True, file=file_key, mapinfo=MAP_INFO, revision=_bump_revision())
+    return jsonify(ok=True, file=file_key, mapinfo=_mapinfo_payload(), revision=_bump_revision())
 
 
 @app.route("/api/map/<file_key>", methods=["DELETE"])
@@ -336,7 +471,7 @@ def delete_map(file_key):
         if p.exists():
             p.unlink()
 
-    return jsonify(ok=True, mapinfo=MAP_INFO, revision=_bump_revision())
+    return jsonify(ok=True, mapinfo=_mapinfo_payload(), revision=_bump_revision())
 
 
 def _optimize_png(fpath):
@@ -375,37 +510,85 @@ def _optimize_png(fpath):
         return original_bytes
 
 
+def _export_map_json(fkey):
+    """Per-map JSON as SensorView writes it: device x/y as integers (the
+    export never carries decimals; the editor's drag and the MCP tools can
+    leave fractions), keys in the export's order. Zone WKT keeps its floats —
+    SensorView itself writes those."""
+    data = MAP_DATA.get(fkey, {})
+    devices = []
+    for d in data.get("devices", []):
+        nd = dict(d)
+        for ax in ("x", "y"):
+            if isinstance(nd.get(ax), float):
+                nd[ax] = int(round(nd[ax]))
+        devices.append(nd)
+    order = ["width", "height", "zoomLevels", "resolutionMin", "resolutionMax",
+             "deviceScale", "zones", "subzones", "devices"]
+    out = {k: data[k] for k in order if k in data}
+    out["devices"] = devices
+    for k, v in data.items():
+        if k not in out:
+            out[k] = v
+    return json.dumps(out, separators=(",", ":")).encode("utf-8")
+
+
 @app.route("/api/export", methods=["POST"])
 def export_mvdb():
-    """Repackage the working directory as a downloadable .mvdb, optimizing PNGs."""
+    """Repackage the working directory as a downloadable .mvdb, optimizing PNGs.
+
+    Refuses to export while a map in the index has no floorplan image:
+    SensorView does not load an archive with a map whose PNG is missing, and
+    a silent omission was how a broken export reached a live site (2026-10-21).
+    """
     work = get_work_dir()
 
     _save_mapinfo()
     for fkey, data in MAP_DATA.items():
         _save_map_json(fkey)
 
+    missing = _maps_without_image()
+    if missing:
+        names = [f"{e.get('name', '')} ({e['file']})" for e in MAP_INFO["maps"] if e["file"] in missing]
+        return jsonify(error="Every map needs a floorplan image before export. "
+                             "Add an image or delete: " + ", ".join(names),
+                       missingImages=missing), 409
+
     stats = {"before": 0, "after": 0}
 
-    buf = io.BytesIO()
-    with py7zr.SevenZipFile(buf, "w") as z:
+    # Stage the exact bytes to ship, then add them in name order (the shape of
+    # SensorView's own export — see ExportArchive).
+    stage = Path(tempfile.mkdtemp(prefix="mvdb_export_"))
+    try:
+        members = []
         for entry in MAP_INFO["maps"]:
             fkey = entry["file"]
-
-            json_path = Path(work) / f"{fkey}.json"
-            if json_path.exists():
-                z.write(json_path, f"{fkey}.json")
+            jp = stage / f"{fkey}.json"
+            jp.write_bytes(_export_map_json(fkey))
+            members.append((jp, f"{fkey}.json"))
 
             png_path = Path(work) / f"{fkey}.png"
-            if png_path.exists():
-                before_size = png_path.stat().st_size
-                optimized_bytes = _optimize_png(png_path)
-                stats["before"] += before_size
-                stats["after"] += len(optimized_bytes)
-                z.writestr(optimized_bytes, f"{fkey}.png")
+            before_size = png_path.stat().st_size
+            optimized_bytes = _optimize_png(png_path)
+            stats["before"] += before_size
+            stats["after"] += len(optimized_bytes)
+            pp = stage / f"{fkey}.png"
+            pp.write_bytes(optimized_bytes)
+            members.append((pp, f"{fkey}.png"))
 
-        mapinfo_path = Path(work) / "mapinfo"
-        if mapinfo_path.exists():
-            z.write(mapinfo_path, "mapinfo")
+        mp = stage / "mapinfo"
+        mp.write_bytes(json.dumps(
+            {"version": MAP_INFO.get("version", 1), "maps": [_ordered_entry(e) for e in MAP_INFO["maps"]]},
+            separators=(",", ":")).encode("utf-8"))
+        members.append((mp, "mapinfo"))
+        members.sort(key=lambda m: m[1])
+
+        buf = io.BytesIO()
+        with ExportArchive(buf, "w") as z:
+            for path, arcname in members:
+                z.write(path, arcname)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
 
     buf.seek(0)
     response = send_file(
@@ -422,6 +605,7 @@ def export_mvdb():
 def _save_mapinfo():
     work = get_work_dir()
     path = Path(work) / "mapinfo"
+    MAP_INFO["maps"] = [_ordered_entry(e) for e in MAP_INFO.get("maps", [])]
     path.write_text(json.dumps(MAP_INFO, separators=(",", ":")), encoding="utf-8")
 
 

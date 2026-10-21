@@ -8,6 +8,8 @@ Load an exported `.mvdb`, edit floorplans, devices, and zones in the browser, th
 
 - **Load / Export** `.mvdb` archives (7-zip format used by SensorView MapView)
 - **Map management** — add, rename, delete floor maps
+- **Navigation tree** — the sidebar is SensorView's MapView drop-down in the order it will appear: drag maps to reorder them or move them between building groups, drag group headers to reorder groups, double-click a header to rename a group, or press **Sort** to order every group by level (P1, B, 01 … PH) with names written as `LEVEL nn`
+- **Exports SensorView can import** — the archive is written in the exact shape of SensorView's own export (entry attributes, timestamps, compression, member order, integer device coordinates), and export is refused while any map lacks a floorplan image (see [METHOD.md §4](docs/METHOD.md#4-round-tripping-with-sensorview))
 - **Device editing** — select, move, add, and remove device markers
 - **Zone editing** — draw new zone polygons, reshape vertices, delete zones
 - **Image replacement** — swap floorplan PNGs for any map
@@ -78,8 +80,8 @@ Open http://localhost:5111 and drop a `.mvdb` file onto the page.
 The package includes a [Model Context Protocol](https://modelcontextprotocol.io) server
 (`mapview-editor-mcp`, registry name `io.github.scrimillspaugh/mapview-editor`) that
 gives an AI assistant editing tools: start the editor, list/read maps, add/move/remove
-device markers, draw and delete zones, search devices across maps, load files, and
-export. It drives the running editor server, and the browser UI live-syncs — you watch
+device markers, draw and delete zones, search devices across maps, rename / reorder /
+sort the navigation tree, load files, and export. It drives the running editor server, and the browser UI live-syncs — you watch
 the drawing build in real time. If you have unsaved manual edits, the sync warns
 instead of overwriting them.
 

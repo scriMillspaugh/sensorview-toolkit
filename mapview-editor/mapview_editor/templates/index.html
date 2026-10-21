@@ -127,6 +127,19 @@ body {
 }
 .map-item:hover .map-delete { opacity: 0.6; }
 .map-item .map-delete:hover { opacity: 1; }
+.map-item .map-warn { color: var(--danger); font-size: 12px; cursor: help; }
+
+/* Navigation tree: drag to reorder maps, move between groups, reorder groups */
+.map-item[draggable="true"], .map-group-header[draggable="true"] { cursor: grab; }
+.map-item.dragging, .map-group-header.dragging { opacity: 0.4; }
+.map-item.drop-before { box-shadow: inset 0 2px 0 var(--accent2); }
+.map-item.drop-after { box-shadow: inset 0 -2px 0 var(--accent2); }
+.map-group-header.drop-into { background: var(--zone-fill); outline: 1px dashed var(--accent2); }
+.map-group-header.drop-before { box-shadow: inset 0 2px 0 var(--accent2); }
+.map-group-header.drop-after { box-shadow: inset 0 -2px 0 var(--accent2); }
+.map-group-header { cursor: default; }
+.map-group-header .group-count { font-weight: 400; color: var(--fg2); margin-left: 6px; letter-spacing: 0; }
+.sidebar-header .btn.small { padding: 4px 8px; font-size: 12px; }
 
 /* Editor area */
 .editor {
@@ -511,7 +524,8 @@ body {
   <div class="sidebar" id="sidebar" style="display:none">
     <div class="sidebar-header">
       <h2>Maps</h2>
-      <button class="btn" id="btnAddMap" title="Add new map">+ Add</button>
+      <button class="btn small" id="btnSortMaps" title="Sort every building's maps by level (P1, B, 01 … PH) and write names as LEVEL nn. Drag maps to arrange them by hand; drag a group header to reorder groups; double-click a header to rename the group.">Sort</button>
+      <button class="btn small" id="btnAddMap" title="Add new map">+ Add</button>
     </div>
     <div class="map-list" id="mapList"></div>
   </div>

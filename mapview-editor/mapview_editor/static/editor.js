@@ -19,7 +19,15 @@ const state = {
   showDeviceLabels: true,
   familyColors: {},     // device family -> dot color, assigned when labels load
   pendingFocus: null,   // { id, x, y } — device to center/highlight after a map loads
+  missingImages: [],    // map keys with no floorplan PNG — export is refused until fixed
 };
+
+// Every response that carries the map index also says which maps have no
+// floorplan image; keep both together so the list and the export agree.
+function setMapinfo(mi) {
+  state.mapinfo = mi;
+  state.missingImages = (mi && mi.missingImages) || [];
+}
 
 // Colorblind-safe categorical palette (Okabe-Ito + extras) for device families.
 const FAMILY_PALETTE = [
@@ -58,6 +66,7 @@ const floorplanImg = $("#floorplanImg");
 const overlaySvg = $("#overlaySvg");
 const propsPanel = $("#propsPanel");
 const btnExport = $("#btnExport");
+const btnSortMaps = $("#btnSortMaps");
 const btnAddMap = $("#btnAddMap");
 const btnDeleteSelected = $("#btnDeleteSelected");
 const btnReplaceImage = $("#btnReplaceImage");
@@ -98,10 +107,12 @@ async function uploadFile(file) {
     const res = await fetch("/api/upload", { method: "POST", body: fd });
     const data = await res.json();
     if (data.ok) {
-      state.mapinfo = data.mapinfo;
+      setMapinfo(data.mapinfo);
       adoptRevision(data);
       showEditor();
-      toast("Loaded " + state.mapinfo.maps.length + " maps");
+      const n = state.missingImages.length;
+      toast("Loaded " + state.mapinfo.maps.length + " maps" +
+            (n ? ` · ${n} without a floorplan image (⚠ in the list) — export is blocked until fixed` : ""));
     } else {
       toast("Error: " + (data.error || "Upload failed"));
     }
@@ -259,7 +270,7 @@ async function checkRevision() {
 async function onRemoteChange(labelsChanged) {
   try {
     const mi = await (await fetch("/api/mapinfo")).json();
-    state.mapinfo = mi;
+    setMapinfo(mi);
     renderMapList();
     if (labelsChanged) await rehydrateLabels();
 
@@ -463,29 +474,60 @@ searchBox.addEventListener("keydown", (e) => {
 
 // ─── Map list ───
 
+// The list is the navigation tree SensorView shows in its MapView drop-down:
+// group order and the order of maps inside a group are exactly the order of
+// entries in mapinfo. Drag a map to reorder it or move it to another group,
+// drag a group header to reorder groups, double-click a header to rename the
+// group. Every change is written back through PUT /api/mapinfo.
+
+function groupedMaps() {
+  const groups = new Map();
+  for (const m of state.mapinfo.maps) {
+    const g = m.group || "";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(m);
+  }
+  return groups;
+}
+
 function renderMapList() {
   mapList.innerHTML = "";
-  const groups = {};
-  for (const m of state.mapinfo.maps) {
-    const g = m.group || "Other";
-    if (!groups[g]) groups[g] = [];
-    groups[g].push(m);
-  }
-  for (const [group, maps] of Object.entries(groups)) {
+  const missing = new Set(state.missingImages || []);
+  for (const [group, maps] of groupedMaps()) {
     const hdr = document.createElement("div");
     hdr.className = "map-group-header";
-    hdr.textContent = group;
+    hdr.dataset.group = group;
+    hdr.draggable = true;
+    hdr.title = "Drag to reorder groups · double-click to rename · drop a map here to move it into this group";
+    const label = document.createElement("span");
+    label.textContent = group || "(no group)";
+    const count = document.createElement("span");
+    count.className = "group-count";
+    count.textContent = maps.length;
+    hdr.appendChild(label);
+    hdr.appendChild(count);
+    hdr.addEventListener("dblclick", () => renameGroup(group));
+    wireGroupDrag(hdr, group);
     mapList.appendChild(hdr);
 
     for (const m of maps) {
       const item = document.createElement("div");
       item.className = "map-item" + (state.currentMap === m.file ? " active" : "");
       item.dataset.file = m.file;
+      item.draggable = true;
 
       const nameSpan = document.createElement("span");
       nameSpan.className = "map-name";
       nameSpan.textContent = m.name;
-      nameSpan.title = m.name;
+      nameSpan.title = m.name + " — drag to reorder or move to another group";
+
+      if (missing.has(m.file)) {
+        const warn = document.createElement("span");
+        warn.className = "map-warn";
+        warn.textContent = "⚠";
+        warn.title = "No floorplan image — export is blocked until one is added (Replace Image) or the map is deleted";
+        item.appendChild(warn);
+      }
 
       const delBtn = document.createElement("button");
       delBtn.className = "map-delete";
@@ -496,14 +538,183 @@ function renderMapList() {
         deleteMap(m.file, m.name);
       });
 
-      item.appendChild(nameSpan);
+      item.insertBefore(nameSpan, item.firstChild);
       item.appendChild(delBtn);
       item.addEventListener("click", () => loadMap(m.file));
       item.addEventListener("dblclick", () => renameMap(m.file));
+      wireMapDrag(item, m.file);
       mapList.appendChild(item);
     }
   }
 }
+
+// ─── Navigation tree editing ───
+
+const drag = { kind: null, key: null };   // kind: "map" | "group"
+
+function clearDropMarks() {
+  mapList.querySelectorAll(".drop-before, .drop-after, .drop-into")
+    .forEach(el => el.classList.remove("drop-before", "drop-after", "drop-into"));
+}
+
+function dropHalf(e, el) {
+  const r = el.getBoundingClientRect();
+  return (e.clientY - r.top) < r.height / 2 ? "before" : "after";
+}
+
+function wireMapDrag(item, fileKey) {
+  item.addEventListener("dragstart", (e) => {
+    drag.kind = "map"; drag.key = fileKey;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", fileKey);
+    item.classList.add("dragging");
+  });
+  item.addEventListener("dragend", () => { item.classList.remove("dragging"); clearDropMarks(); });
+  item.addEventListener("dragover", (e) => {
+    if (drag.kind !== "map" || drag.key === fileKey) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    clearDropMarks();
+    item.classList.add(dropHalf(e, item) === "before" ? "drop-before" : "drop-after");
+  });
+  item.addEventListener("dragleave", () => item.classList.remove("drop-before", "drop-after"));
+  item.addEventListener("drop", async (e) => {
+    if (drag.kind !== "map" || drag.key === fileKey) return;
+    e.preventDefault();
+    const half = dropHalf(e, item);
+    clearDropMarks();
+    const maps = state.mapinfo.maps.slice();
+    const moving = maps.find(m => m.file === drag.key);
+    const target = maps.find(m => m.file === fileKey);
+    maps.splice(maps.indexOf(moving), 1);
+    let at = maps.indexOf(target) + (half === "after" ? 1 : 0);
+    maps.splice(at, 0, moving);
+    const movedGroup = moving.group !== target.group;
+    moving.group = target.group;
+    await commitMapOrder(maps, movedGroup ? `Moved to ${target.group || "(no group)"}` : "Reordered");
+  });
+}
+
+function wireGroupDrag(hdr, group) {
+  hdr.addEventListener("dragstart", (e) => {
+    drag.kind = "group"; drag.key = group;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", group);
+    hdr.classList.add("dragging");
+  });
+  hdr.addEventListener("dragend", () => { hdr.classList.remove("dragging"); clearDropMarks(); });
+  hdr.addEventListener("dragover", (e) => {
+    if (drag.kind === "map") {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      clearDropMarks();
+      hdr.classList.add("drop-into");
+    } else if (drag.kind === "group" && drag.key !== group) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      clearDropMarks();
+      hdr.classList.add(dropHalf(e, hdr) === "before" ? "drop-before" : "drop-after");
+    }
+  });
+  hdr.addEventListener("dragleave", () => hdr.classList.remove("drop-before", "drop-after", "drop-into"));
+  hdr.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const half = dropHalf(e, hdr);
+    clearDropMarks();
+    if (drag.kind === "map") {
+      // Drop on a header = move the map to the end of that group.
+      const maps = state.mapinfo.maps.slice();
+      const moving = maps.find(m => m.file === drag.key);
+      maps.splice(maps.indexOf(moving), 1);
+      moving.group = group;
+      let at = maps.length;
+      for (let i = maps.length - 1; i >= 0; i--) {
+        if ((maps[i].group || "") === group) { at = i + 1; break; }
+      }
+      if (at === maps.length && !maps.some(m => (m.group || "") === group)) at = maps.length;
+      maps.splice(at, 0, moving);
+      await commitMapOrder(maps, `Moved to ${group || "(no group)"}`);
+    } else if (drag.kind === "group" && drag.key !== group) {
+      const groups = Array.from(groupedMaps().keys());
+      groups.splice(groups.indexOf(drag.key), 1);
+      let at = groups.indexOf(group) + (half === "after" ? 1 : 0);
+      groups.splice(at, 0, drag.key);
+      const byGroup = groupedMaps();
+      const maps = [];
+      for (const g of groups) maps.push(...byGroup.get(g));
+      await commitMapOrder(maps, "Groups reordered");
+    }
+  });
+}
+
+async function commitMapOrder(maps, msg) {
+  try {
+    const res = await fetch("/api/mapinfo", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ maps }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast("Error: " + (data.error || res.status)); return; }
+    setMapinfo(data.mapinfo);
+    adoptRevision(data);
+    renderMapList();
+    if (msg) toast(msg);
+  } catch (err) {
+    toast("Error: " + err.message);
+  }
+}
+
+function renameGroup(group) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Rename Group</h3>
+      <label>Building Group (applies to every map in it)</label>
+      <input type="text" id="renameGroupName">
+      <div class="modal-actions">
+        <button class="btn" id="modalCancel">Cancel</button>
+        <button class="btn primary" id="modalOk">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector("#renameGroupName");
+  input.value = group;
+  input.focus(); input.select();
+  overlay.querySelector("#modalCancel").addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  const doSave = async () => {
+    const name = input.value.trim();
+    overlay.remove();
+    if (name === group) return;
+    const maps = state.mapinfo.maps.map(m => ((m.group || "") === group ? { ...m, group: name } : m));
+    await commitMapOrder(maps, `Group renamed to ${name || "(no group)"}`);
+  };
+  overlay.querySelector("#modalOk").addEventListener("click", doSave);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSave(); });
+}
+
+btnSortMaps.addEventListener("click", async () => {
+  if (!state.mapinfo) return;
+  if (!confirm("Sort every building's maps by level and write names as LEVEL nn (e.g. 'Level 01_Lobby' becomes 'LEVEL 01 - LOBBY')?\nGroups keep their order. Ctrl+Z does not undo this; re-drag if needed.")) return;
+  try {
+    const res = await fetch("/api/mapinfo/sort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ normalize: true }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast("Error: " + (data.error || res.status)); return; }
+    setMapinfo(data.mapinfo);
+    adoptRevision(data);
+    renderMapList();
+    const n = (data.renamed || []).length;
+    toast("Sorted by level" + (n ? ` · ${n} name${n === 1 ? "" : "s"} normalised` : ""));
+  } catch (err) {
+    toast("Error: " + err.message);
+  }
+});
 
 async function loadMap(fileKey) {
   if (state.dirty && state.currentMap) {
@@ -1099,7 +1310,7 @@ btnAddMap.addEventListener("click", () => {
       });
       const data = await res.json();
       if (data.ok) {
-        state.mapinfo = data.mapinfo;
+        setMapinfo(data.mapinfo);
         adoptRevision(data);
         renderMapList();
         loadMap(data.file);
@@ -1120,7 +1331,7 @@ async function deleteMap(fileKey, name) {
     const res = await fetch(`/api/map/${fileKey}`, { method: "DELETE" });
     const data = await res.json();
     if (data.ok) {
-      state.mapinfo = data.mapinfo;
+      setMapinfo(data.mapinfo);
       adoptRevision(data);
       if (state.currentMap === fileKey) {
         state.currentMap = null;
@@ -1195,6 +1406,7 @@ imageInput.addEventListener("change", async () => {
     const data = await res.json();
     if (data.ok) {
       adoptRevision(data);
+      try { setMapinfo(await (await fetch("/api/mapinfo")).json()); renderMapList(); } catch { /* keep list */ }
       const newSrc = `/api/map/${state.currentMap}/image?t=${Date.now()}`;
       floorplanImg.src = newSrc;
       floorplanImg.onload = () => {
@@ -1316,7 +1528,12 @@ btnExport.addEventListener("click", async () => {
   statusText.textContent = "Exporting...";
   try {
     const res = await fetch("/api/export", { method: "POST" });
-    if (!res.ok) throw new Error("Export failed");
+    if (!res.ok) {
+      let msg = "Export failed";
+      try { const err = await res.json(); if (err.error) msg = err.error; } catch { /* not JSON */ }
+      try { setMapinfo(await (await fetch("/api/mapinfo")).json()); renderMapList(); } catch { /* keep list */ }
+      throw new Error(msg);
+    }
     const before = parseInt(res.headers.get("X-Images-Before-Bytes") || "0");
     const after = parseInt(res.headers.get("X-Images-After-Bytes") || "0");
     const blob = await res.blob();
@@ -1428,7 +1645,7 @@ async function rehydrateMaps() {
   try {
     const mi = await (await fetch("/api/mapinfo")).json();
     if (mi.maps && mi.maps.length) {
-      state.mapinfo = mi;
+      setMapinfo(mi);
       showEditor();
     }
   } catch { /* fresh server, nothing to restore */ }

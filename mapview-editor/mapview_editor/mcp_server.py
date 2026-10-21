@@ -141,8 +141,11 @@ def get_status() -> dict:
         "mapsLoaded": len(mapinfo.get("maps", [])),
         "labelsLoaded": bool(labels.get("loaded")),
         "labelsSource": labels.get("source"),
+        "mapsWithoutImage": mapinfo.get("missingImages", []),
         "note": "No maps loaded — load a .mvdb in the browser or call load_mvdb."
-                if not mapinfo.get("maps") else "Ready.",
+                if not mapinfo.get("maps") else
+                ("Export is blocked: some maps have no floorplan image (mapsWithoutImage)."
+                 if mapinfo.get("missingImages") else "Ready."),
     }
 
 
@@ -247,7 +250,66 @@ def create_map(group: str, name: str) -> dict:
     """Create a new empty map (e.g. group='BUILDING A', name='LEVEL 05').
     A floorplan PNG can be attached later in the browser."""
     data = _request("POST", "/api/map/create", {"group": group, "name": name})
-    return {"ok": True, "file": data.get("file")}
+    return {"ok": True, "file": data.get("file"),
+            "note": "The map has no floorplan image yet; export is refused until one is "
+                    "attached in the browser (Replace Image) or the map is deleted."}
+
+
+# ─── Navigation tree (SensorView's MapView drop-down = mapinfo order) ───
+
+def _put_maps(maps: list[dict]) -> dict:
+    data = _request("PUT", "/api/mapinfo", {"maps": maps})
+    if "error" in data:
+        raise ValueError(f"{data['error']} (unknown={data.get('unknown')}, missing={data.get('missing')})")
+    return data
+
+
+@mcp.tool()
+def rename_map(file_key: str, name: str | None = None, group: str | None = None) -> dict:
+    """Rename a map and/or move it to another building group (the name shown in
+    SensorView's drop-down, e.g. name='LEVEL 05', group='CURE BLDG'). Omit a
+    field to leave it as is. Moving to a group places the map at that group's
+    end; use reorder_maps for a precise position."""
+    maps = _request("GET", "/api/mapinfo").get("maps", [])
+    entry = next((m for m in maps if m["file"] == file_key), None)
+    if entry is None:
+        raise ValueError(f"No map {file_key}")
+    if name is not None:
+        entry["name"] = name
+    if group is not None and group != entry.get("group"):
+        maps.remove(entry)
+        entry["group"] = group
+        at = max((i for i, m in enumerate(maps) if m.get("group") == group), default=len(maps) - 1) + 1
+        maps.insert(at, entry)
+    _put_maps(maps)
+    return {"ok": True, "file": file_key, "name": entry["name"], "group": entry.get("group")}
+
+
+@mcp.tool()
+def reorder_maps(file_keys: list[str]) -> dict:
+    """Set the exact order of the navigation tree: every loaded map's file key,
+    once each, in the order SensorView should list them. Groups are shown in
+    the order their first map appears. Keys you leave out or repeat are
+    rejected, so call list_maps first and send the complete list."""
+    maps = _request("GET", "/api/mapinfo").get("maps", [])
+    by_key = {m["file"]: m for m in maps}
+    unknown = [k for k in file_keys if k not in by_key]
+    if unknown:
+        raise ValueError(f"Not loaded: {unknown}")
+    data = _put_maps([by_key[k] for k in file_keys])
+    return {"ok": True, "order": [f"{m['group']} / {m['name']}" for m in data["mapinfo"]["maps"]]}
+
+
+@mcp.tool()
+def sort_maps(normalize_names: bool = True) -> dict:
+    """Sort every building group by level — P1, B, 01 … 12, PH — keeping the
+    groups' own order. With normalize_names (default) map names are rewritten
+    in SensorView's style: 'Level 12' → 'LEVEL 12', 'Level 01_Lobby' →
+    'LEVEL 01 - LOBBY'. Returns the new order and what was renamed."""
+    data = _request("POST", "/api/mapinfo/sort", {"normalize": bool(normalize_names)})
+    return {"ok": True,
+            "order": [f"{m['group']} / {m['name']}" for m in data["mapinfo"]["maps"]],
+            "renamed": data.get("renamed", [])}
 
 
 @mcp.tool()

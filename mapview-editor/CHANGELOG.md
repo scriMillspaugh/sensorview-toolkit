@@ -3,6 +3,40 @@
 All notable changes to the MapView Editor. Versions follow [SemVer](https://semver.org/);
 release tags are `mapview-editor-vX.Y.Z`.
 
+## [1.4.0] — 2026-10-21
+
+- **Fixed: exports that SensorView could not import.** SensorView 15.14 hung
+  on a 1.3.0 export (MapView never finished loading, device navigation dead
+  until a backup was restored), and a hand-rebuilt file failed with
+  `Could not find file …\WebUI\Maps\map0051.json`. SensorView extracts the
+  archive into its `WebUI\Maps` folder with a reader that expects the shape
+  of its own export. Four things differed, all fixed in `/api/export`:
+  - every entry is now written with Windows attributes `32` and a last-write
+    time only — py7zr ≥ 1.1 stamps Unix-extension bits (`0x8180 8020`) plus
+    creation and access times on every member, and that is what broke the
+    import;
+  - LZMA2 only, no BCJ filter (py7zr's default chain adds one);
+  - members in name order (`map0009.json`, `map0009.png`, …, `mapinfo`),
+    `mapinfo` entries in the export's key order;
+  - device `x`/`y` written as integers — SensorView never writes decimals;
+    dragging a marker or the MCP tools could leave fractions.
+  Verified by importing the rebuilt archive into SensorView 15.14.1.83.
+- **Export refuses a map without a floorplan image** (HTTP 409 naming the
+  maps) instead of silently leaving the PNG out of the archive — 1.3.0 did
+  that for two maps, which is the likeliest reason the import never finished.
+  The sidebar marks such maps with ⚠, the load toast counts them, and the MCP
+  `get_status` lists them as `mapsWithoutImage`.
+- **Navigation tree editing.** The sidebar is SensorView's MapView drop-down
+  in the order it will appear. Drag a map to reorder it or drop it on another
+  group's header to move it there; drag a group header to reorder groups;
+  double-click a header to rename the group (every map in it moves). A
+  **Sort** button orders each group by level (P1, B, 01 … 12, PH) and writes
+  names in SensorView's style (`Level 01_Lobby` → `LEVEL 01 - LOBBY`). New
+  endpoint `POST /api/mapinfo/sort`; `PUT /api/mapinfo` now validates that
+  the body lists every loaded map exactly once.
+- New MCP tools: `rename_map` (name and/or group), `reorder_maps` (exact
+  order), `sort_maps`.
+
 ## [1.3.0] — 2026-08-13
 
 - **Installable package.** `pip install mapview-editor` now provides
