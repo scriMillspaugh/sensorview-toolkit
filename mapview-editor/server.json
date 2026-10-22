@@ -1,7 +1,7 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "io.github.scrimillspaugh/mapview-editor",
-  "description": "Edit Acuity nLight SensorView MapView floorplans: read maps, place and move device markers, draw zones, search devices, arrange the navigation tree, and export .mvdb archives through the local MapView Editor.",
+  "description": "Edit Acuity nLight SensorView MapView floorplans: device markers, zones, navigation tree, export.",
   "repository": {
     "url": "https://github.com/scriMillspaugh/sensorview-toolkit",
     "source": "github"

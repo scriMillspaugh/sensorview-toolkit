@@ -136,5 +136,5 @@ Two rules worth keeping:
 
 MIT — see the repository root [LICENSE](../LICENSE).
 
-<!-- MCP registry ownership marker -->
-mcpName: io.github.scrimillspaugh/mapview-editor
+<!-- MCP registry ownership marker: must stay in the PyPI description -->
+<!-- mcp-name: io.github.scrimillspaugh/mapview-editor -->
